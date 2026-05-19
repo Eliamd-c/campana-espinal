@@ -3,11 +3,10 @@ const { parse } = require('url');
 const next = require('next');
 
 const dev = false; // Forzado a producción en Hostinger
-const hostname = 'localhost';
-const port = process.env.PORT || 3000;
-
-const app = next({ dev, hostname, port });
+const app = next({ dev });
 const handle = app.getRequestHandler();
+
+const port = process.env.PORT || 3000;
 
 app.prepare().then(() => {
   createServer(async (req, res) => {
