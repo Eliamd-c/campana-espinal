@@ -1,0 +1,313 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth Tables
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          String    @default("coordinador") // "admin" | "coordinador"
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// App Tables
+
+model Contacto {
+  cedula                 String    @id @db.VarChar(12)
+  nombre                 String?   @db.VarChar(120)
+  telefono               String?   @db.VarChar(15)
+  barrio                 String?   @db.VarChar(80)
+  municipio              String?   @default("El Espinal") @db.VarChar(80)
+  lider_id               Int?
+  es_nuevo               Boolean?  @default(true)
+  fecha_registro         DateTime? @default(now())
+  fecha_ultimo_contacto  DateTime?
+  problematica           String?   @db.Text
+  categoria_problematica String?   @db.VarChar(40)
+  puesto_votacion        String?   @db.VarChar(120)
+  direccion_puesto       String?   @db.VarChar(120)
+  mesa_numero            String?   @db.VarChar(6)
+  notas                  String?   @db.Text
+
+  intencion_voto         String?   @default("desconocido") @db.VarChar(20) // positivo, negativo, indeciso, desconocido
+  ultima_encuesta        DateTime?
+
+  lider       Lider?        @relation(fields: [lider_id], references: [id])
+  asistencias AsistenteEvento[]
+  mensajes    Mensaje[]
+  clics_enlace ClicRastreo[]
+
+  @@index([barrio])
+  @@index([intencion_voto])
+  @@index([lider_id])
+  @@index([fecha_registro])
+  @@index([puesto_votacion])
+
+  @@map("contactos")
+}
+
+model Reunion {
+  id                Int       @id @default(autoincrement())
+  titulo            String?   @db.VarChar(120)
+  fecha             DateTime?
+  lugar             String?   @db.VarChar(120)
+  lider_id          Int?
+  total_asistentes  Int?      @default(0)
+  nuevos_unicos     Int?      @default(0)
+  repetidos         Int?      @default(0)
+  foto_planilla_url String?   @db.VarChar(255)
+  alerta_trasteo    Boolean?  @default(false)
+
+  lider Lider? @relation(fields: [lider_id], references: [id])
+
+  @@map("reuniones")
+}
+
+model Lider {
+  id                 Int       @id @default(autoincrement())
+  nombre             String?   @db.VarChar(120)
+  telefono           String?   @db.VarChar(15)
+  barrio             String?   @db.VarChar(80)
+  personas_nuevas    Int?      @default(0)
+  personas_repetidas Int?      @default(0)
+  tasa_trasteo       Decimal?  @default(0.0) @db.Decimal(5, 2)
+  score              Int?      @default(0)
+  estado             String?   @default("activo") @db.VarChar(10)
+  fecha_registro     DateTime? @default(now())
+
+  contactos Contacto[]
+  reuniones Reunion[]
+  eventos   Evento[]
+
+  @@index([barrio])
+  @@index([estado])
+  @@index([fecha_registro])
+
+  @@map("lideres")
+}
+
+model Mensaje {
+  id                 Int       @id @default(autoincrement())
+  contacto_cedula    String?   @db.VarChar(12)
+  campana_id         Int?
+  texto              String?   @db.Text
+  instancia_zona     String?   @db.VarChar(40)
+  direccion          String?   @db.VarChar(10) // 'enviado' | 'recibido'
+  estado             String?   @default("pendiente") @db.VarChar(10)
+  categoria          String?   @db.VarChar(40)
+  sentimiento        String?   @db.VarChar(10)
+  requiere_respuesta Boolean?  @default(false)
+  fecha              DateTime? @default(now())
+
+  contacto Contacto? @relation(fields: [contacto_cedula], references: [cedula])
+  campana  Campana?  @relation(fields: [campana_id], references: [id])
+
+  @@index([contacto_cedula])
+  @@index([campana_id])
+  @@index([estado])
+  @@index([fecha])
+
+  @@map("mensajes")
+}
+
+model Campana {
+  id           Int       @id @default(autoincrement())
+  nombre       String    @db.VarChar(120)
+  texto_base   String    @db.Text
+  estado       String    @default("creada") @db.VarChar(20) // creada, enviando, finalizada, pausada
+  fecha_inicio DateTime?
+  fecha_fin    DateTime?
+  creado_por   String?   @db.VarChar(80)
+  fecha_creado DateTime  @default(now())
+
+  mensajes     Mensaje[]
+  variaciones  CampanaVariacion[]
+
+  @@map("campanas")
+}
+
+model CampanaVariacion {
+  id         Int      @id @default(autoincrement())
+  campana_id Int
+  texto      String   @db.Text
+  campana    Campana  @relation(fields: [campana_id], references: [id], onDelete: Cascade)
+
+  @@map("campana_variaciones")
+}
+
+model Contenido {
+  id           Int       @id @default(autoincrement())
+  titulo       String?   @db.VarChar(120)
+  tipo         String?   @db.VarChar(10) // 'video' | 'imagen' | 'texto'
+  categoria    String?   @db.VarChar(40)
+  url          String?   @db.VarChar(255)
+  fecha_subida DateTime? @default(now())
+
+  @@map("contenido")
+}
+
+model Auditoria {
+  id            Int       @id @default(autoincrement())
+  tabla         String?   @db.VarChar(40)
+  registro_id   String?   @db.VarChar(40)
+  accion        String?   @db.VarChar(10) // 'CREATE' | 'UPDATE' | 'DELETE'
+  datos_antes   Json?
+  datos_despues Json?
+  usuario_id    String?   @db.VarChar(80)
+  timestamp     DateTime? @default(now())
+
+  @@index([tabla])
+  @@index([registro_id])
+  @@index([usuario_id])
+  @@index([timestamp])
+
+  @@map("auditoria")
+}
+
+model EnlaceCorto {
+  codigo       String   @id @db.VarChar(10)
+  url_original String   @db.Text
+  fecha_creado DateTime @default(now())
+  clics        ClicRastreo[]
+
+  @@map("enlaces_cortos")
+}
+
+model ClicRastreo {
+  id              Int      @id @default(autoincrement())
+  codigo_enlace   String   @db.VarChar(10)
+  contacto_cedula String   @db.VarChar(12)
+  fecha           DateTime @default(now())
+
+  enlace   EnlaceCorto @relation(fields: [codigo_enlace], references: [codigo], onDelete: Cascade)
+  contacto Contacto    @relation(fields: [contacto_cedula], references: [cedula], onDelete: Cascade)
+
+  @@map("clics_rastreo")
+}
+
+model ChatMemoria {
+  id         Int      @id @default(autoincrement())
+  sesion_id  String   @db.VarChar(80)   // ID único de la sesión de chat
+  rol        String   @db.VarChar(10)   // 'user' | 'assistant'
+  contenido  String   @db.Text
+  tipo       String   @default("analista") @db.VarChar(20) // 'analista' | 'asesor'
+  timestamp  DateTime @default(now())
+
+  @@index([sesion_id])
+  @@map("chat_memoria")
+}
+
+model Evento {
+  id                   String    @id @default(uuid())
+  titulo               String    @db.VarChar(200)
+  tipo                 String    @db.VarChar(40) // mitin, casa_a_casa, foro, recorrido, reunion_barrial, reunion_lideres, fecha_critica
+  estado               String    @default("borrador") @db.VarChar(40) // borrador, pendiente_aprobacion, aprobado, en_ejecucion, finalizado, cancelado
+  fecha_inicio         DateTime
+  fecha_fin            DateTime
+  lugar                String    @db.VarChar(200)
+  barrio               String?   @db.VarChar(80)
+  asistentes_esperados Int       @default(0)
+  asistentes_reales    Int?
+  presupuesto_estimado Float?
+  presupuesto_real     Float?
+  checklist            Json?     // [{item, cantidad, obtenido}]
+  notas                String?   @db.Text
+  creado_por           String    @db.VarChar(80)
+  aprobado_por         String?   @db.VarChar(80)
+  lider_id             Int?
+  alerta_seguridad     Boolean   @default(false)
+  fuente               String    @default("web") @db.VarChar(20) // web, whatsapp, ia
+  fecha_creado         DateTime  @default(now())
+  fecha_actualizado    DateTime  @updatedAt
+
+  lider                Lider?    @relation(fields: [lider_id], references: [id])
+  asistentes           AsistenteEvento[]
+
+  @@map("eventos")
+}
+
+model AsistenteEvento {
+  id              String    @id @default(uuid())
+  evento_id       String
+  contacto_cedula String
+  asistio         Boolean   @default(true)
+  fecha_registro  DateTime  @default(now())
+
+  evento   Evento   @relation(fields: [evento_id], references: [id], onDelete: Cascade)
+  contacto Contacto @relation(fields: [contacto_cedula], references: [cedula], onDelete: Cascade)
+
+  @@unique([evento_id, contacto_cedula])
+  @@map("asistentes_eventos")
+}
+
+model ChecklistPlantilla {
+  id          String   @id @default(uuid())
+  tipo_evento String   @db.VarChar(40) 
+  items       Json     // [{item, cantidad_default, categoria}]
+  activa      Boolean  @default(true)
+  
+  @@map("checklist_plantillas")
+}
+
+model RespuestaRAG {
+  id                   Int      @id @default(autoincrement())
+  sesion_id            String   @db.VarChar(80)
+  pregunta             String   @db.Text
+  respuesta            String   @db.Text
+  documentos_usados    Int[]    // IDs de documentos citados
+  confianza_promedio   Float
+  score_validacion     Int      // 0-100
+  problemas_detectados String[] // Array de problemas
+  rechazada            Boolean  @default(false)
+  razon_rechazo        String?  @db.Text
+  fecha_creacion       DateTime @default(now()) @map("fecha_creacion")
+
+  @@index([sesion_id])
+  @@index([fecha_creacion])
+  @@map("respuestas_rag")
+}
