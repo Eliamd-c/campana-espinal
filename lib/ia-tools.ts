@@ -116,7 +116,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: "ejecutar_consulta_sql",
-    description: "Ejecuta una consulta SQL en la base de datos. Para hacer cambios (INSERT, UPDATE, DELETE, etc.) DEBES pasar el parámetro clave_admin proporcionado por el usuario. Si no la tienes, solo puedes usar SELECT.",
+    description: "Ejecuta una consulta SQL en la base de datos. IMPORTANTE: Para leer datos (SELECT), NO necesitas pedir ninguna clave al usuario, hazlo directamente. Para hacer cambios (INSERT, UPDATE, DELETE, etc.) DEBES pasar el parámetro clave_admin proporcionado por el usuario.",
     parameters: {
       type: "object",
       properties: {
