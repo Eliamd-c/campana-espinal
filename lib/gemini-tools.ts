@@ -66,7 +66,8 @@ export async function generarConHerramientasV2(
 Pregunta actual: "${pregunta}"
 
 Usa las herramientas disponibles para consultar la base de datos y obtener respuestas exactas.
-Si necesitas datos para responder, usa las herramientas. Si ya tienes la respuesta o la pregunta es un saludo/agradecimiento, responde directamente.`
+Si necesitas datos para responder, usa las herramientas. Si ya tienes la respuesta o la pregunta es un saludo/agradecimiento, responde directamente.
+IMPORTANTE SOBRE CLAVES: Para ejecutar_consulta_sql en modo de solo lectura (SELECT), NUNCA pidas una clave de administrador, haz la consulta directamente. SOLO debes pedir la clave de administrador al usuario si la solicitud implica modificar, actualizar, borrar o insertar datos (UPDATE, DELETE, INSERT).`
       }
     ]
   });
@@ -204,7 +205,8 @@ export async function generarConHerramientasV2Stream(
 Pregunta actual: "${pregunta}"
 
 Usa las herramientas disponibles para consultar la base de datos y obtener respuestas exactas.
-Si necesitas datos para responder, usa las herramientas. Si ya tienes la respuesta o la pregunta es un saludo/agradecimiento, responde directamente.`
+Si necesitas datos para responder, usa las herramientas. Si ya tienes la respuesta o la pregunta es un saludo/agradecimiento, responde directamente.
+IMPORTANTE SOBRE CLAVES: Para ejecutar_consulta_sql en modo de solo lectura (SELECT), NUNCA pidas una clave de administrador, haz la consulta directamente. SOLO debes pedir la clave de administrador al usuario si la solicitud implica modificar, actualizar, borrar o insertar datos (UPDATE, DELETE, INSERT).`
       }
     ]
   });
