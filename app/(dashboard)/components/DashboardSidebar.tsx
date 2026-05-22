@@ -11,6 +11,7 @@ const navigation = [
   { name: "Contactos", href: "/contactos", icon: "👥" },
   { name: "Agenda", href: "/agenda", icon: "📅" },
   { name: "Líderes", href: "/lideres", icon: "⭐" },
+  { name: "Líneas WA", href: "/lineas", icon: "📱" },
   { name: "Mensajes", href: "/mensajes", icon: "💬" },
   { name: "Mesas", href: "/mesas", icon: "🗳️" },
   { name: "Enlaces", href: "/enlaces", icon: "🔗" },

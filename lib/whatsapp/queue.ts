@@ -1,15 +1,24 @@
-import { Queue, Worker, Job } from "bullmq";
+import fs from 'fs';
+import { Queue, Worker, Job } from 'bullmq';
 import Redis from "ioredis";
 import prisma from "@/lib/db";
-import * as Sentry from "@sentry/nextjs";
 import { logger } from "@/lib/logger";
 
+function logDebug(msg: string) {
+  console.log(msg);
+  try { fs.appendFileSync('debug.log', new Date().toISOString() + ' [QUEUE] ' + msg + '\n'); } catch(e) {}
+}
+
 export interface MensajeJobData {
-  instancia_id: string;
+  instancia_id: string; // ID de LineaWhatsapp
   contacto_cedula: string;
   numero: string;
   texto: string;
   mensaje_db_id: number;
+  mediaUrl?: string;
+  pollOptions?: string[];
+  delayMin?: number;
+  delayMax?: number;
 }
 
 const isBuildPhase = 
@@ -19,19 +28,10 @@ const isBuildPhase =
 
 let redisConnection: any;
 let whatsappQueue: any;
-let whatsappWorker: any;
 
 if (isBuildPhase) {
-  logger.info("[Queue] 🏗️ Build phase detected. Using mock Redis and Queue to prevent connection crashes.");
-  redisConnection = {
-    on: () => {},
-    quit: async () => {},
-  };
-  whatsappQueue = {
-    addBulk: async () => [],
-    add: async () => ({}),
-  };
-  whatsappWorker = null;
+  redisConnection = { on: () => {}, quit: async () => {} };
+  whatsappQueue = { addBulk: async () => [], add: async () => ({}) };
 } else {
   redisConnection = new Redis(process.env.REDIS_URL || "redis://localhost:6379", {
     maxRetriesPerRequest: null,
@@ -41,92 +41,127 @@ if (isBuildPhase) {
     connection: redisConnection,
     defaultJobOptions: {
       attempts: 3,
-      backoff: {
-        type: "exponential",
-        delay: 5000,
-      },
+      backoff: { type: "exponential", delay: 5000 },
       removeOnComplete: true,
     },
   });
+}
 
-  const getRandomDelay = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1) + min);
+/**
+ * Añade mensajes masivos distribuyéndolos (Round-Robin) entre las líneas activas.
+ */
+export async function encolarMensajesMasivos(mensajes: any[], mediaUrl?: string, pollOptions?: string[], options?: { lineaId?: number, delayMin?: number, delayMax?: number }) {
+  logDebug(`encolarMensajesMasivos started with ${mensajes.length} messages.`);
+  
+  // 1. Obtener líneas conectadas y aptas
+  let lineasActivas = await prisma.lineaWhatsapp.findMany({
+    where: { estado: 'conectado' },
+    select: { id: true, limite_diario: true, mensajes_enviados_hoy: true }
+  });
 
-  const procesarMensaje = async (job: Job<MensajeJobData>) => {
-    const { instancia_id, numero, texto, mensaje_db_id } = job.data;
+  logDebug(`lineasActivas found: ${lineasActivas.length}`);
 
+  if (lineasActivas.length === 0) {
+    throw new Error("No hay líneas de WhatsApp conectadas para enviar mensajes.");
+  }
+
+  // Si se eligió una línea específica, filtrar para usar solo esa
+  if (options?.lineaId) {
+    lineasActivas = lineasActivas.filter(l => l.id === options.lineaId);
+    if (lineasActivas.length === 0) {
+      throw new Error("La línea seleccionada no está conectada o no existe.");
+    }
+  }
+
+  // Filtrar líneas que superaron el límite diario
+  const lineasDisponibles = lineasActivas.filter(l => (l.mensajes_enviados_hoy || 0) < (l.limite_diario || 500));
+
+  logDebug(`lineasDisponibles: ${lineasDisponibles.length}`);
+
+  if (lineasDisponibles.length === 0) {
+    throw new Error("Las líneas seleccionadas han superado su límite de envío diario.");
+  }
+
+  const jobsData = [];
+  let lineaIndex = 0;
+
+  logDebug(`Iterating messages...`);
+  for (const msj of mensajes) {
+    const linea = lineasDisponibles[lineaIndex];
+    
+    // Actualizar el mensaje en DB para registrar qué línea lo enviará
+    await prisma.mensaje.update({
+      where: { id: msj.id },
+      data: { linea_id: linea.id }
+    });
+
+    jobsData.push({
+      name: `msg_${msj.id}`,
+      data: {
+        instancia_id: linea.id.toString(),
+        contacto_cedula: msj.contacto_cedula,
+        numero: msj.contacto?.telefono || "",
+        texto: msj.texto || "",
+        mensaje_db_id: msj.id,
+        mediaUrl,
+        pollOptions,
+        delayMin: options?.delayMin,
+        delayMax: options?.delayMax
+      }
+    });
+
+    // Avanzar al siguiente celular (Round-Robin)
+    lineaIndex = (lineaIndex + 1) % lineasDisponibles.length;
+  }
+
+  logDebug(`Calling whatsappQueue.addBulk with ${jobsData.length} jobs...`);
+  
+  // Timeout prevention in case Redis is down
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error("Timeout de conexión al motor de colas (Redis parece estar apagado).")), 3000);
+  });
+  
+  await Promise.race([
+    whatsappQueue.addBulk(jobsData),
+    timeoutPromise
+  ]);
+
+  logDebug(`addBulk finished!`);
+  logger.info(`Encolados ${jobsData.length} mensajes repartidos en ${lineasDisponibles.length} líneas.`);
+}
+
+export async function setupErrorHandlers() {
+  whatsappQueue.on("failed", async (job, err) => {
+    if (!job) return;
+    const { mensaje_db_id, campana_id, numero } = job.data;
+    
     try {
-      // 1. Verificación de horario (solo entre 8 AM y 9 PM)
-      const horaActual = new Date().getHours();
-      if (horaActual < 8 || horaActual >= 21) {
-        logger.warn("Postergando mensaje por horario no hábil", { mensaje_db_id });
-        throw new Error("Fuera de horario hábil.");
-      }
-
-      // 2. Retraso aleatorio
-      const isDev = process.env.NODE_ENV !== "production";
-      const delayMs = isDev ? getRandomDelay(1000, 2000) : getRandomDelay(45000, 180000);
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-
-      // 3. Enviar
-      const resEnvio = await fetch("http://localhost:3001/api/enviar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lineaId: instancia_id,
-          numeros: [numero],
-          tipo: "texto",
-          contenido: texto,
-        }),
+      await prisma.mensajeError.create({
+        data: {
+          mensaje_id: mensaje_db_id,
+          campana_id,
+          numero_telefono: numero,
+          error_code: err.name,
+          error_message: err.message.substring(0, 500),
+          intentos: job.attemptsMade,
+        },
       });
-
-      if (!resEnvio.ok) {
-        throw new Error(`HTTP ${resEnvio.status}`);
-      }
-
-      // 4. Actualizar estado
+      
+      // Marcar mensaje como fallido
       await prisma.mensaje.update({
         where: { id: mensaje_db_id },
-        data: { estado: "enviado" },
+        data: { estado: "fallido" }
       });
-
-      logger.info("Mensaje enviado exitosamente desde cola", { mensaje_db_id, numero });
-    } catch (error: any) {
-      Sentry.captureException(error, { tags: { job: "whatsapp-queue", mensaje_id: mensaje_db_id } });
-      throw error; // Reintentar si falló
-    }
-  };
-
-  whatsappWorker = new Worker<MensajeJobData>("whatsapp-messages", procesarMensaje, {
-    connection: redisConnection,
-    concurrency: 1,
-    limiter: {
-      max: 20,
-      duration: 15 * 60 * 1000,
-    },
-  });
-
-  whatsappWorker.on("completed", (job) => {
-    logger.debug(`Job ${job.id} finalizado`);
-  });
-
-  whatsappWorker.on("failed", async (job, err) => {
-    const attempts = job?.attemptsMade || 0;
-    const maxAttempts = job?.opts?.attempts || 3;
-
-    logger.error(`Job ${job?.id} falló (Intento ${attempts}/${maxAttempts})`, { error: err.message });
-
-    if (attempts >= maxAttempts && job?.data.mensaje_db_id) {
-      // 💀 Dead-letter logic: Marcar como fallo definitivo en DB
-      await prisma.mensaje.update({
-        where: { id: job.data.mensaje_db_id },
-        data: { estado: "fallido_definitivo" },
-      });
-      logger.crit("Mensaje fallido definitivamente tras múltiples reintentos", { 
-        mensaje_id: job.data.mensaje_db_id,
-        numero: job.data.numero 
-      });
+      
+      logger.warn(`Mensaje ${mensaje_db_id} falló permanentemente. Error: ${err.message}`);
+    } catch (e) {
+      logger.error("Error guardando MensajeError:", e);
     }
   });
 }
 
-export { redisConnection, whatsappQueue, whatsappWorker };
+if (!isBuildPhase) {
+  setupErrorHandlers();
+}
+
+export { redisConnection, whatsappQueue };

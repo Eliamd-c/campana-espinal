@@ -1,164 +1,111 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import prisma from "@/lib/db";
+import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
   try {
-    const { audioBase64, texto, mimeType, sender } = await req.json();
+    const { audioBase64, texto, mimeType, sender, lineaId } = await req.json();
     
     if (!audioBase64 && !texto) {
       return NextResponse.json({ error: "No se proporcionó contenido" }, { status: 400 });
     }
 
-    const sesionId = `wa_${sender}`;
-    const ahora = new Date();
-    const fechaActual = ahora.toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Bogota" });
-    const horaActual = ahora.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", timeZone: "America/Bogota" });
+    const numero = sender.split('@')[0];
+    const sesionId = `wa_${numero}`;
+
+    // Buscar quién nos escribe
+    const lider = await prisma.lider.findFirst({ where: { telefono: { contains: numero } } });
+    const contacto = await prisma.contacto.findFirst({ where: { telefono: { contains: numero } } });
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.5-flash",
-      systemInstruction: `Eres el Coordinador Logístico Oficial de la "Campaña Espinal".
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-CONTEXTO TEMPORAL EXACTO (usa esto siempre para calcular fechas):
-- Fecha de hoy: ${fechaActual}
-- Hora actual: ${horaActual} (Hora Colombia, GMT-5)
-- Si alguien dice "este viernes", "mañana", "la próxima semana", CALCULA la fecha real basándote en el contexto anterior.
-- Usa SIEMPRE el año correcto (${ahora.getFullYear()}) en las fechas ISO que generes.
-Tu objetivo es planificar eventos de forma ESTRICTA a partir de notas de voz y textos, asegurando que no se cometan errores ni queden cabos sueltos. Tienes memoria de la conversación actual.
+    // --- LÓGICA SI ES UN LÍDER (Planificación de Eventos) ---
+    if (lider && !contacto) {
+      // (Mantenemos la lógica de eventos para líderes)
+      const ahora = new Date();
+      model.systemInstruction = `Eres el Coordinador Logístico Oficial. Rol: Agendar eventos a partir de notas de voz.
+RESPONDE SÓLO EN JSON.
+Formato:
+{"accion": "crear", "evento": {"titulo": "...", "tipo": "mitin", "lugar": "...", "fecha_inicio": "2026-05-22T10:00:00Z", "fecha_fin": "...", "notas": "...", "asistentes_esperados": 50}}
+O {"accion": "preguntar", "mensaje": "..."}`;
 
-REGLAS DE INTELIGENCIA (¡MUY IMPORTANTES!):
-1. Para crear un evento necesitas OBLIGATORIAMENTE 5 cosas:
-   - Fecha y Hora exacta.
-   - Dirección ESPECÍFICA (No sirve solo el barrio como "Caballero y Góngora". Debes exigir una dirección, manzana, o punto de referencia como "Polideportivo", "Casa de Juan").
-   - Tipo de evento (mitin, casa_a_casa, etc).
-   - Líder organizador (¿Quién está a cargo de este evento?).
-   - Requerimientos logísticos (Si el usuario no menciona sillas, refrigerios, o sonido, DEBES preguntarle proactivamente: "¿Necesitas que te enviemos sillas, sonido o refrigerios?").
+      const payloadContent: any[] = [
+        `Historial:\n(Mensaje actual de líder: ${texto || '[Audio]'})`,
+        "INSTRUCCIÓN: Analiza si tienes Lugar, Fecha y Tipo. Si sí, accion: crear. Si no, accion: preguntar."
+      ];
+      if (audioBase64) payloadContent.push({ inlineData: { data: audioBase64, mimeType: mimeType || "audio/ogg" } });
 
-2. Revisa el "HISTORIAL RECIENTE". Si falta UNO SOLO de los 5 puntos anteriores, NO CREES EL EVENTO.
-3. Si falta información, usa "accion: preguntar". Sé amable pero firme en pedir el dato exacto que falta.
-4. Si el usuario te hace una pregunta, te da una simple confirmación (ej. "ok", "aprobada", "gracias") o te pide hacer algo con un evento que YA creaste en el turno anterior, usa "accion: responder". NO VUELVAS A CREAR el evento si en tu mensaje anterior ya dijiste "¡Listo! He agendado...".
+      const result = await model.generateContent(payloadContent);
+      const datos = JSON.parse(result.response.text().replace(/```json/g, '').replace(/```/g, '').trim());
 
-RESPONDE ÚNICAMENTE CON UN JSON ESTRICTO CON ESTE FORMATO:
-
-Opción A (Falta información vital o pedir detalles):
-{
-  "accion": "preguntar",
-  "mensaje": "Tu pregunta amigable pidiendo la dirección exacta, el responsable, o si necesita logística."
-}
-
-Opción B (Responder consulta o confirmación simple):
-{
-  "accion": "responder",
-  "mensaje": "Respuesta directa a lo que el usuario preguntó o confirmó."
-}
-
-Opción C (Todo está COMPLETO, CONFIRMADO y NO SE HA CREADO AÚN):
-{
-  "accion": "crear",
-  "evento": {
-    "titulo": "Título corto",
-    "tipo": "mitin" | "casa_a_casa" | "reunion_lideres" | "recorrido" | "foro" | "reunion_barrial",
-    "lugar": "Dirección exacta y barrio",
-    "asistentes_esperados": 50,
-    "fecha_inicio": "Fecha de inicio en formato ISO (ASUME SIEMPRE EL AÑO 2026)",
-    "fecha_fin": "Fecha fin en formato ISO (ASUME SIEMPRE EL AÑO 2026)",
-    "notas": "Mencionar al organizador responsable y detalles",
-    "checklist_solicitado": [
-      { "item": "Sillas", "cantidad_default": 50, "categoria": "Mobiliario", "obtenido": false }
-    ]
-  }
-}`
-    });
-
-    // 1. Obtener historial (Últimos 8 mensajes recientes)
-    let history = await prisma.chatMemoria.findMany({
-      where: { sesion_id: sesionId },
-      orderBy: { timestamp: "desc" },
-      take: 8 // Tomar los más recientes
-    });
-    
-    // Invertir para que Gemini los lea en orden cronológico correcto (del más viejo al más nuevo)
-    history = history.reverse();
-
-    let contextoHistorial = "HISTORIAL RECIENTE DE LA CONVERSACIÓN:\n";
-    if (history.length === 0) {
-      contextoHistorial += "(No hay mensajes previos. Inicia la conversación.)\n";
-    } else {
-      history.forEach(h => {
-         contextoHistorial += `[${h.rol === 'user' ? 'Líder' : 'Tú'}]: ${h.contenido}\n`;
-      });
+      let mensajeRespuesta = datos.mensaje || "Evento procesado.";
+      if (datos.accion === "crear") {
+         await prisma.evento.create({
+            data: {
+              titulo: datos.evento.titulo, tipo: datos.evento.tipo, estado: "pendiente_aprobacion",
+              fecha_inicio: new Date(datos.evento.fecha_inicio), fecha_fin: new Date(datos.evento.fecha_fin),
+              lugar: datos.evento.lugar, asistentes_esperados: datos.evento.asistentes_esperados || 50,
+              creado_por: "Bot WhatsApp", lider_id: lider.id
+            }
+         });
+         mensajeRespuesta = `Evento agendado exitosamente: ${datos.evento.titulo}`;
+      }
+      return NextResponse.json({ success: true, mensaje: mensajeRespuesta });
     }
 
-    // 2. Preparar el payload
+    // --- LÓGICA SI ES UN CONTACTO / VOTANTE (Procesamiento Inbound IA) ---
+    model.systemInstruction = `Eres un asistente inteligente para la "Campaña Espinal". 
+Un ciudadano te ha respondido un mensaje de WhatsApp.
+Tu tarea es:
+1. Analizar su sentimiento e intención política.
+2. Extraer un 'concepto_ia' breve (resumen de lo que dijo o su queja).
+3. Redactar una respuesta amable, empática y política. Si pregunta algo, responde basándote en que somos una campaña transparente. Si está enojado, pide disculpas y toma nota.
+
+RESPONDE ESTRICTAMENTE EN JSON:
+{
+  "intencion": "positivo" | "negativo" | "indeciso" | "desconocido",
+  "sentimiento": "alegre" | "enojado" | "neutral" | "preocupado",
+  "concepto": "Breve resumen de 1-2 líneas de lo que dijo el ciudadano.",
+  "respuesta_sugerida": "El mensaje de texto que se le debe enviar de vuelta al ciudadano por WhatsApp."
+}`;
+
     const payloadContent: any[] = [
-       contextoHistorial,
-       "\nINSTRUCCIÓN: Analiza el historial junto con el nuevo mensaje. Si falta un dato vital (Lugar, Fecha, Tipo), haz 'accion: preguntar'. Si tienes todo, haz 'accion: crear'."
+        `Ciudadano ${contacto ? contacto.nombre : numero} escribió:\n"${texto || '[Mensaje de Audio]'}"`
     ];
-
-    if (audioBase64) {
-       payloadContent.push({ inlineData: { data: audioBase64, mimeType: mimeType || "audio/ogg" } });
-    } else if (texto) {
-       payloadContent.push(`\nMENSAJE ACTUAL DEL LÍDER: "${texto}"`);
-    }
+    if (audioBase64) payloadContent.push({ inlineData: { data: audioBase64, mimeType: mimeType || "audio/ogg" } });
 
     const result = await model.generateContent(payloadContent);
-    let textoRespuesta = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-    const datos = JSON.parse(textoRespuesta);
+    const datos = JSON.parse(result.response.text().replace(/```json/g, '').replace(/```/g, '').trim());
 
-    // 3. Guardar el input del usuario en memoria
-    await prisma.chatMemoria.create({
-      data: {
-        sesion_id: sesionId,
-        rol: "user",
-        contenido: texto ? texto : "[Nota de voz enviada]",
-        tipo: "whatsapp"
-      }
-    });
+    // Guardar el análisis en la base de datos
+    if (contacto) {
+        await prisma.contacto.update({
+            where: { cedula: contacto.cedula },
+            data: {
+                intencion_voto: datos.intencion !== "desconocido" ? datos.intencion : undefined,
+                concepto_ia: datos.concepto
+            }
+        });
 
-    let mensajeRespuesta = "";
-
-    // 4. Evaluar la decisión
-    if (datos.accion === "preguntar" || datos.accion === "responder") {
-      mensajeRespuesta = datos.mensaje;
-    } else if (datos.accion === "crear") {
-      const evt = datos.evento;
-      const plantilla = await prisma.checklistPlantilla.findFirst({ where: { tipo_evento: evt.tipo, activa: true } });
-      let checklistFinal = plantilla && Array.isArray(plantilla.items) ? (plantilla.items as any[]) : [];
-      if (evt.checklist_solicitado && Array.isArray(evt.checklist_solicitado)) {
-        checklistFinal = [...checklistFinal, ...evt.checklist_solicitado];
-      }
-
-      const nuevoEvento = await prisma.evento.create({
-        data: {
-          titulo: evt.titulo, tipo: evt.tipo, estado: "pendiente_aprobacion",
-          fecha_inicio: new Date(evt.fecha_inicio), fecha_fin: new Date(evt.fecha_fin),
-          lugar: evt.lugar, barrio: evt.lugar, asistentes_esperados: evt.asistentes_esperados || 50,
-          notas: `[Audio/Texto de WhatsApp]: ${evt.notas}`,
-          creado_por: "Bot WhatsApp", checklist: checklistFinal, fuente: "whatsapp"
-        }
-      });
-
-      const itemsListados = evt.checklist_solicitado ? evt.checklist_solicitado.map((i:any) => i.item).join(", ") : "la logística base";
-      mensajeRespuesta = `¡Listo! He agendado la "${nuevoEvento.titulo}" para el ${nuevoEvento.fecha_inicio.toLocaleDateString()}. He incluido en tu checklist logístico: *${itemsListados}*. El evento está pendiente de aprobación por el equipo.`;
-    } else {
-      mensajeRespuesta = "Lo siento, no entendí bien la instrucción. ¿Podrías repetirlo?";
+        // Registrar el mensaje entrante en la tabla de mensajes
+        await prisma.mensaje.create({
+            data: {
+                contacto_cedula: contacto.cedula,
+                texto: texto || '[Audio procesado por IA]',
+                direccion: 'recibido',
+                estado: 'procesado',
+                sentimiento: datos.sentimiento,
+                linea_id: lineaId
+            }
+        });
     }
 
-    // 5. Guardar la respuesta del asistente en memoria
-    await prisma.chatMemoria.create({
-      data: {
-        sesion_id: sesionId,
-        rol: "assistant",
-        contenido: mensajeRespuesta,
-        tipo: "whatsapp"
-      }
-    });
-
-    return NextResponse.json({ success: true, mensaje: mensajeRespuesta });
+    return NextResponse.json({ success: true, mensaje: datos.respuesta_sugerida });
 
   } catch (error: any) {
-    console.error("Error en procesar-mensaje:", error);
-    return NextResponse.json({ success: false, mensaje: "Lo siento, tuve un problema procesando la solicitud." }, { status: 500 });
+    logger.error("Error en procesar-mensaje inbound:", error);
+    return NextResponse.json({ success: false, mensaje: "Lo siento, tuve un problema procesando tu mensaje." }, { status: 500 });
   }
 }

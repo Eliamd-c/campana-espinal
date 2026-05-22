@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(Start-Sleep -Seconds 5)",
+      "Bash(Get-Content \"C:\\\\Users\\\\elamd\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-elamd-Documents-Aplicativo-Aplicativo-campana-espinal\\\\b1e809cc-30c8-4930-b638-1ee188e9da2f\\\\tasks\\\\beirrqp6t.output\" -Tail 20)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp"
+    ]
+  }
+}
