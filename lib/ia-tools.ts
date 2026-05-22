@@ -104,6 +104,27 @@ export const TOOL_DEFINITIONS = [
       },
       required: ["campana_id", "mensaje_base"]
     }
+  },
+  {
+    name: "obtener_esquema_bd",
+    description: "Obtiene la estructura exacta de todas las tablas y columnas de la base de datos PostgreSQL. Úsala siempre antes de ejecutar_consulta_sql si no estás seguro de los nombres exactos de las columnas.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: "ejecutar_consulta_sql",
+    description: "Ejecuta una consulta SQL en la base de datos. Para hacer cambios (INSERT, UPDATE, DELETE, etc.) DEBES pasar el parámetro clave_admin proporcionado por el usuario. Si no la tienes, solo puedes usar SELECT.",
+    parameters: {
+      type: "object",
+      properties: {
+        consulta: { type: "string", description: "La consulta SQL (Ej: UPDATE contactos SET...)" },
+        clave_admin: { type: "string", description: "La clave secreta proporcionada por el usuario en el chat para autorizar la modificación de datos. Solo pásala si el usuario te la escribe explícitamente." }
+      },
+      required: ["consulta"]
+    }
   }
 ];
 
@@ -287,6 +308,86 @@ export async function ejecutarHerramienta(nombre: string, args: any): Promise<st
           mensaje: `Se han generado y guardado ${variaciones.length} variaciones para la campaña.`,
           total_variaciones: variaciones.length
         });
+      }
+
+      case "obtener_esquema_bd": {
+        const query = `
+          SELECT table_name, column_name, data_type 
+          FROM information_schema.columns 
+          WHERE table_schema = 'public' AND table_name NOT LIKE '\\_%'
+          ORDER BY table_name, ordinal_position;
+        `;
+        const result: any[] = await prisma.$queryRawUnsafe(query);
+        
+        const schemaMap: any = {};
+        for (const row of result) {
+           if (!schemaMap[row.table_name]) schemaMap[row.table_name] = [];
+           schemaMap[row.table_name].push(`${row.column_name} (${row.data_type})`);
+        }
+        
+        let schemaString = "Esquema de la base de datos (PostgreSQL):\n";
+        for (const table in schemaMap) {
+           schemaString += `Tabla '${table}':\n  Columnas: ${schemaMap[table].join(", ")}\n\n`;
+        }
+        return JSON.stringify({ esquema: schemaString });
+      }
+
+      case "ejecutar_consulta_sql": {
+        const sql = args.consulta as string;
+        const claveAdmin = args.clave_admin as string;
+        
+        // Verifica si la consulta es de escritura
+        const upperSql = sql.toUpperCase();
+        const isWriteQuery = 
+          !upperSql.trim().startsWith("SELECT") ||
+          upperSql.includes("INSERT ") ||
+          upperSql.includes("UPDATE ") ||
+          upperSql.includes("DELETE ") ||
+          upperSql.includes("DROP ") ||
+          upperSql.includes("ALTER ") ||
+          upperSql.includes("TRUNCATE ");
+
+        // Filtro estricto de seguridad anti-escritura
+        if (isWriteQuery) {
+          const expectedPassword = process.env.SUPERADMIN_PASSWORD || "admin123";
+          
+          if (!claveAdmin) {
+            return JSON.stringify({ error: "Seguridad: Acción bloqueada. Para realizar cambios en la base de datos, debes pedirle al usuario que te proporcione la clave de seguridad." });
+          }
+          
+          if (claveAdmin !== expectedPassword) {
+            return JSON.stringify({ error: "Seguridad: La clave proporcionada es incorrecta. Acción bloqueada." });
+          }
+        }
+
+        try {
+          // Ejecuta la consulta cruda y confía en el resultado de Postgres
+          // Si es un UPDATE/DELETE, prisma executeRaw o queryRawUnsafe funciona, pero puede devolver objetos vacíos o número de filas afectadas
+          let resultados: any;
+          if (isWriteQuery) {
+            resultados = await prisma.$executeRawUnsafe(sql);
+            return JSON.stringify({ exito: true, filas_afectadas: resultados, nota: "Operación de modificación completada con éxito." });
+          } else {
+            resultados = await prisma.$queryRawUnsafe(sql);
+          }
+          
+          // Reemplazamos los BigInt por Number o String para que JSON.stringify no lance error
+          const cleanResultados = resultados.map((row: any) => {
+             const cleanRow: any = {};
+             for (const key in row) {
+               cleanRow[key] = typeof row[key] === "bigint" ? row[key].toString() : row[key];
+             }
+             return cleanRow;
+          });
+
+          return JSON.stringify({ 
+            exito: true, 
+            resultados: cleanResultados, 
+            nota: "Si los resultados son extensos, resume los hallazgos principales para el usuario de forma conversacional." 
+          });
+        } catch (e: any) {
+          return JSON.stringify({ error: "Error ejecutando SQL", detalle: e.message });
+        }
       }
 
       default:

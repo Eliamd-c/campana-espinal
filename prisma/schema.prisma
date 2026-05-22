@@ -4,8 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // NextAuth Tables
@@ -73,6 +74,7 @@ model Contacto {
   direccion_puesto       String?   @db.VarChar(120)
   mesa_numero            String?   @db.VarChar(6)
   notas                  String?   @db.Text
+  concepto_ia            String?   @db.Text // Añadido para el perfilado de IA
 
   intencion_voto         String?   @default("desconocido") @db.VarChar(20) // positivo, negativo, indeciso, desconocido
   ultima_encuesta        DateTime?
@@ -135,6 +137,7 @@ model Mensaje {
   id                 Int       @id @default(autoincrement())
   contacto_cedula    String?   @db.VarChar(12)
   campana_id         Int?
+  linea_id           Int?
   texto              String?   @db.Text
   instancia_zona     String?   @db.VarChar(40)
   direccion          String?   @db.VarChar(10) // 'enviado' | 'recibido'
@@ -143,14 +146,25 @@ model Mensaje {
   sentimiento        String?   @db.VarChar(10)
   requiere_respuesta Boolean?  @default(false)
   fecha              DateTime? @default(now())
+  
+  // NUEVOS CAMPOS (Revision Modulo Mensajes)
+  es_respuesta       Boolean?    @default(false)
+  respondido_en      DateTime?
+  requiere_accion    Boolean?    @default(false)
+  tipo_accion        String?     @db.VarChar(20) // responder, investigar, derivar
 
-  contacto Contacto? @relation(fields: [contacto_cedula], references: [cedula])
-  campana  Campana?  @relation(fields: [campana_id], references: [id])
+  contacto Contacto?      @relation(fields: [contacto_cedula], references: [cedula])
+  campana  Campana?       @relation(fields: [campana_id], references: [id])
+  linea    LineaWhatsapp? @relation(fields: [linea_id], references: [id])
 
   @@index([contacto_cedula])
+  @@index([linea_id])
   @@index([campana_id])
   @@index([estado])
   @@index([fecha])
+  @@index([es_respuesta])
+  @@index([requiere_accion])
+  @@index([campana_id, estado])
 
   @@map("mensajes")
 }
@@ -164,6 +178,12 @@ model Campana {
   fecha_fin    DateTime?
   creado_por   String?   @db.VarChar(80)
   fecha_creado DateTime  @default(now())
+  
+  // NUEVOS CAMPOS (Revision Modulo Mensajes)
+  pausada_en        DateTime?
+  cancelada_en      DateTime?
+  cancelada_por     String?
+  razon_cancelacion String? @db.Text
 
   mensajes     Mensaje[]
   variaciones  CampanaVariacion[]
@@ -310,4 +330,99 @@ model RespuestaRAG {
   @@index([sesion_id])
   @@index([fecha_creacion])
   @@map("respuestas_rag")
+}
+
+model LineaWhatsapp {
+  id                    Int       @id @default(autoincrement())
+  numero_telefono       String?   @db.VarChar(20)
+  nombre                String?   @db.VarChar(80)
+  estado                String?   @default("desconectado") @db.VarChar(20) // desconectado, conectado, baneado, qr_listo
+  qr_actual             String?   @db.Text
+  limite_diario         Int?      @default(500)
+  mensajes_enviados_hoy Int?      @default(0)
+  ultima_conexion       DateTime?
+  fecha_creacion        DateTime  @default(now())
+  
+  mensajes              Mensaje[]
+
+  @@map("lineas_whatsapp")
+}
+
+model WhatsappAuthState {
+  id        String   @id @default(cuid())
+  sessionId String   @db.VarChar(80)
+  key       String   @db.VarChar(255)
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, key])
+  @@index([sessionId])
+  @@map("whatsapp_auth_state")
+}
+
+model MensajeError {
+  id              Int       @id @default(autoincrement())
+  mensaje_id      Int
+  campana_id      Int?
+  error_code      String?   @db.VarChar(50)
+  error_message   String?   @db.Text
+  numero_telefono String?   @db.VarChar(20)
+  intentos        Int       @default(0)
+  primer_intento  DateTime  @default(now())
+  ultimo_intento  DateTime  @updatedAt
+  resuelto        Boolean?  @default(false)
+  resuelto_por    String?
+  notas_resolucion String?  @db.Text
+  
+  @@index([campana_id])
+  @@index([resuelto])
+  @@map("mensajes_errores")
+}
+
+model PlantillaMensaje {
+  id          Int       @id @default(autoincrement())
+  nombre      String    @db.VarChar(100)
+  categoria   String    @db.VarChar(40)
+  texto       String    @db.Text
+  variables   String[]
+  creada_por  String
+  fecha_creada DateTime @default(now())
+  veces_usada Int      @default(0)
+  
+  @@index([categoria])
+  @@map("plantillas_mensajes")
+}
+
+model MessageTemplate {
+  id          Int       @id @default(autoincrement())
+  nombre      String    @db.VarChar(120)
+  descripcion String?   @db.Text
+  categoria   String    @db.VarChar(40)
+  bloques     Json      // Contenido del mensaje como JSON
+  preview_texto String? @db.Text
+  imagen_preview String? @db.VarChar(255)
+  
+  creada_por  String
+  fecha_creada DateTime @default(now())
+  actualizada DateTime @updatedAt
+  veces_usada Int      @default(0)
+  
+  esPublica   Boolean  @default(false)
+  
+  @@index([categoria])
+  @@index([esPublica])
+  @@map("message_templates")
+}
+
+model MessageDraft {
+  id          Int       @id @default(autoincrement())
+  usuario_id  String
+  bloques     Json
+  titulo      String?
+  
+  guardado_en DateTime @default(now())
+  actualizado DateTime @updatedAt
+  
+  @@index([usuario_id])
+  @@map("message_drafts")
 }

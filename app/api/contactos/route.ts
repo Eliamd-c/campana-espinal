@@ -1,26 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { FiltroContactosSchema, ContactoSchema } from "@/lib/validation";
 import { handleError } from "@/lib/api/errors";
 import { Prisma } from "@prisma/client";
 import { invalidarCacheAlCrearContacto } from "@/lib/cache-strategies";
+import { z } from "zod";
 
 export const dynamic = "force-dynamic";
 
+const ContactoLocalSchema = z.object({
+  cedula: z.string().min(4),
+  nombre: z.string().optional(),
+  telefono: z.string().optional(),
+  barrio: z.string().optional(),
+  intencion_voto: z.string().optional(),
+  problematica: z.string().optional(),
+});
+
 export async function GET(req: NextRequest) {
   try {
-    // ✅ Validar query params
-    const params = Object.fromEntries(req.nextUrl.searchParams);
-    const parsed = FiltroContactosSchema.safeParse(params);
-    
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Parámetros de búsqueda inválidos", details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
+    const searchParams = req.nextUrl.searchParams;
+    const barrio = searchParams.get("barrio");
+    let intencion_voto = searchParams.get("intencion_voto");
+    const puesto = searchParams.get("puesto");
+    const search = searchParams.get("search") || searchParams.get("q");
+    const limit = Number(searchParams.get("limit")) || 50;
+    const cursor = searchParams.get("cursor");
 
-    const { barrio, intencion_voto, puesto, limit, cursor, search } = parsed.data;
+    if (intencion_voto === "todos" || intencion_voto === "Todos los registrados") {
+      intencion_voto = null;
+    }
 
     // ✅ Construir where con tipos seguros
     const where: Prisma.ContactoWhereInput = {};
@@ -34,10 +42,10 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    if (barrio) {
+    if (barrio && barrio !== "Todos") {
       where.barrio = { contains: barrio, mode: "insensitive" };
     }
-    if (intencion_voto && intencion_voto !== "todos") {
+    if (intencion_voto) {
       where.intencion_voto = intencion_voto;
     }
     if (puesto) {
@@ -104,7 +112,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const parsed = ContactoSchema.safeParse(body);
+    const parsed = ContactoLocalSchema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json(
