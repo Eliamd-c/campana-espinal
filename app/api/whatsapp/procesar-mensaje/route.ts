@@ -11,7 +11,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No se proporcionó contenido" }, { status: 400 });
     }
 
-    const numero = sender.split('@')[0];
+    let numero = sender.split('@')[0];
+    // Eliminar el código de país (57 para Colombia) si está presente para poder buscar en la DB
+    if (numero.startsWith('57') && numero.length === 12) {
+      numero = numero.substring(2);
+    }
     const sesionId = `wa_${numero}`;
 
     // Buscar quién nos escribe
@@ -67,6 +71,7 @@ RESPONDE ESTRICTAMENTE EN JSON:
 {
   "intencion": "positivo" | "negativo" | "indeciso" | "desconocido",
   "sentimiento": "alegre" | "enojado" | "neutral" | "preocupado",
+  "requiere_accion": boolean,
   "concepto": "Breve resumen de 1-2 líneas de lo que dijo el ciudadano.",
   "respuesta_sugerida": "El mensaje de texto que se le debe enviar de vuelta al ciudadano por WhatsApp."
 }`;
@@ -97,6 +102,8 @@ RESPONDE ESTRICTAMENTE EN JSON:
                 direccion: 'recibido',
                 estado: 'procesado',
                 sentimiento: datos.sentimiento,
+                es_respuesta: true,
+                requiere_accion: datos.requiere_accion || false,
                 linea_id: lineaId
             }
         });

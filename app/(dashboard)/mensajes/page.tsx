@@ -97,6 +97,8 @@ export default function MensajesPage() {
 
   // Fetch Audiencia cuando cambian los filtros
   useEffect(() => {
+    let active = true;
+
     if (soloManuales) {
       setAudienciaList([]);
       return;
@@ -104,16 +106,22 @@ export default function MensajesPage() {
 
     setCargandoAudiencia(true);
     let url = `/api/contactos?limit=5000`; // Limite alto para campaña
-      if (barrioSeleccionado !== "Todos") url += `&barrio=${encodeURIComponent(barrioSeleccionado)}`;
-      if (intencionVoto !== "todos") url += `&intencion_voto=${encodeURIComponent(intencionVoto)}`;
+    if (barrioSeleccionado !== "Todos") url += `&barrio=${encodeURIComponent(barrioSeleccionado)}`;
+    if (intencionVoto !== "todos") url += `&intencion_voto=${encodeURIComponent(intencionVoto)}`;
       
-      fetch(url)
-        .then(res => res.json())
-        .then(json => {
-          setAudienciaList(json.data || []);
+    fetch(url)
+      .then(res => res.json())
+      .then(json => {
+        if (active) setAudienciaList(json.data || []);
       })
-      .finally(() => setCargandoAudiencia(false));
+      .finally(() => {
+        if (active) setCargandoAudiencia(false);
+      });
+
+    return () => { active = false; };
   }, [step, barrioSeleccionado, intencionVoto, soloManuales]);
+
+  const audienciaEfectiva = soloManuales ? [] : audienciaList;
 
   // Polling para Monitoreo en Paso 3
   useEffect(() => {
@@ -157,11 +165,11 @@ export default function MensajesPage() {
   };
 
   const enviarCampana = async () => {
-    if (!textoMensaje || (audienciaList.length + manuales.length) === 0) return;
+    if (!textoMensaje || (audienciaEfectiva.length + manuales.length) === 0) return;
     setEnviando(true);
     
     try {
-      const cedulas = audienciaList.map(c => c.cedula);
+      const cedulas = audienciaEfectiva.map(c => c.cedula);
       const res = await fetch("/api/mensajes/enviar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -303,7 +311,7 @@ export default function MensajesPage() {
                       <Search className="w-5 h-5 text-gray-400"/> Contactos Seleccionados
                     </h3>
                     <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-bold">
-                      {audienciaList.length + manuales.length} destinatarios
+                      {audienciaEfectiva.length + manuales.length} destinatarios
                     </span>
                   </div>
                   
@@ -312,11 +320,11 @@ export default function MensajesPage() {
                       <div className="flex justify-center items-center py-12">
                         <RefreshCw className="w-8 h-8 text-purple-500 animate-spin" />
                       </div>
-                    ) : (audienciaList.length + manuales.length) === 0 ? (
+                    ) : (audienciaEfectiva.length + manuales.length) === 0 ? (
                       <p className="text-center text-gray-500 py-12">Ningún contacto coincide con los filtros ni manuales agregados.</p>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {[...manuales, ...audienciaList].slice(0, 50).map((c, i) => (
+                        {[...manuales, ...audienciaEfectiva].slice(0, 50).map((c, i) => (
                           <div key={c.cedula || i} className={`border p-4 rounded-xl flex items-center justify-between transition-colors ${c.barrio === 'Manual' ? 'border-orange-200 bg-orange-50' : 'border-slate-100 hover:border-purple-200 hover:bg-purple-50/30'}`}>
                             <div>
                               <p className="font-bold text-gray-800 text-sm">{c.nombre}</p>
@@ -402,9 +410,9 @@ export default function MensajesPage() {
             </div>
 
             <div className="mt-8 flex justify-end border-t pt-6">
-              <button onClick={enviarCampana} disabled={enviando || (audienciaList.length + manuales.length) === 0} className="bg-green-600 text-white px-8 py-4 rounded-xl font-bold flex items-center gap-3 hover:bg-green-700 transition-transform hover:scale-105 disabled:opacity-50 shadow-lg text-lg">
+              <button onClick={enviarCampana} disabled={enviando || (audienciaEfectiva.length + manuales.length) === 0} className="bg-green-600 text-white px-8 py-4 rounded-xl font-bold flex items-center gap-3 hover:bg-green-700 transition-transform hover:scale-105 disabled:opacity-50 shadow-lg text-lg">
                 {enviando ? <RefreshCw className="w-6 h-6 animate-spin"/> : <Send className="w-6 h-6"/>}
-                {enviando ? 'Iniciando Motor...' : `¡Lanzar Campaña a ${audienciaList.length + manuales.length}!`}
+                {enviando ? 'Iniciando Motor...' : `¡Lanzar Campaña a ${audienciaEfectiva.length + manuales.length}!`}
               </button>
             </div>
           </div>

@@ -73,13 +73,16 @@ export async function POST(req: NextRequest) {
 
     const todosLosContactos = [...contactos];
     if (manuales && manuales.length > 0) {
-      manuales.forEach((m) => {
-        todosLosContactos.push({
-          cedula: null as any,
-          nombre: m.nombre || "Amigo",
-          telefono: m.telefono
+      for (const m of manuales) {
+        const telSanitizado = m.telefono.replace(/\D/g, '');
+        const cedulaManual = `M-${telSanitizado.slice(-10)}`;
+        const contactoManual = await prisma.contacto.upsert({
+          where: { cedula: cedulaManual },
+          update: { nombre: m.nombre || "Amigo", telefono: telSanitizado },
+          create: { cedula: cedulaManual, nombre: m.nombre || "Amigo", telefono: telSanitizado, barrio: "Manual" }
         });
-      });
+        todosLosContactos.push(contactoManual);
+      }
     }
 
     const mensajesDB = [];
