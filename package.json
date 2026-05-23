@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "node server.js",
     "lint": "next lint",
-    "bot": "tsx bot/index.ts",
+    "bot": "tsx bot/start.ts",
     "export:contactos": "tsx scripts/exportar-contactos.ts"
   },
   "dependencies": {

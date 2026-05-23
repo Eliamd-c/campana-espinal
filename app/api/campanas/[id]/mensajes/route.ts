@@ -27,7 +27,7 @@ export async function GET(
             telefono: true,
           }
         },
-        linea_whatsapp: {
+        linea: {
           select: {
             nombre: true,
           }
@@ -67,7 +67,7 @@ export async function GET(
       destinatario_numero: m.contacto?.telefono || m.contacto_cedula,
       estado: m.estado,
       fecha: m.fecha,
-      linea_usada: m.linea_whatsapp?.nombre || "N/A"
+      linea_usada: m.linea?.nombre || "N/A"
     }));
 
     return NextResponse.json({
