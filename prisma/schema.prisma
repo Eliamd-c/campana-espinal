@@ -338,8 +338,10 @@ model LineaWhatsapp {
   nombre                String?   @db.VarChar(80)
   estado                String?   @default("desconectado") @db.VarChar(20) // desconectado, conectado, baneado, qr_listo
   qr_actual             String?   @db.Text
-  limite_diario         Int?      @default(500)
+  proxyUrl              String?   @db.Text
+  limite_diario         Int?      @default(45)
   mensajes_enviados_hoy Int?      @default(0)
+  ultimo_reinicio_limite DateTime?
   ultima_conexion       DateTime?
   fecha_creacion        DateTime  @default(now())
   

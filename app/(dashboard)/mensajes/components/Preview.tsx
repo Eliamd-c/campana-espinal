@@ -4,45 +4,47 @@ import type { Bloque } from "@/lib/message-builder/types";
 
 export default function Preview({ bloques }: { bloques: Bloque[] }) {
   return (
-    <div className="border-b border-slate-200 p-4 bg-slate-50">
-      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex justify-between items-center">
-        <span>Vista Previa</span>
-        <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">WhatsApp</span>
-      </h3>
+    <div className="h-full flex flex-col p-4 bg-slate-50 select-none">
+      <div className="flex justify-between items-center shrink-0 mb-1">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Simulador</span>
+        <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2.5 py-0.5 rounded-full font-bold">WhatsApp</span>
+      </div>
       
-      {/* Simulación de celular */}
-      <div className="w-full mx-auto bg-slate-800 rounded-[2rem] p-3 shadow-xl ring-4 ring-slate-900/5">
-        {/* Notch */}
-        <div className="bg-black rounded-b-xl h-5 mx-auto w-24 mb-2"></div>
-        
-        {/* Pantalla */}
-        <div className="bg-[#EFEAE2] rounded-2xl p-4 h-80 overflow-y-auto custom-scrollbar relative" style={{ backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')", backgroundSize: 'cover' }}>
+      {/* Container de celular centrado */}
+      <div className="flex-1 flex items-center justify-center py-2">
+        <div className="w-full max-w-[280px] bg-slate-800 rounded-[2.5rem] p-3 shadow-xl ring-4 ring-slate-900/5 flex flex-col">
+          {/* Notch */}
+          <div className="bg-black rounded-b-xl h-4 mx-auto w-20 mb-2 shrink-0"></div>
           
-          {/* Contact Header */}
-          <div className="absolute top-0 left-0 right-0 bg-[#00A884] text-white px-4 py-2 flex items-center gap-3 z-10 shadow-sm">
-            <div className="w-8 h-8 bg-slate-200 rounded-full overflow-hidden flex-shrink-0">
-              <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="avatar" />
+          {/* Pantalla */}
+          <div className="bg-[#EFEAE2] rounded-2xl p-4 h-[440px] overflow-y-auto custom-scrollbar relative flex flex-col" style={{ backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')", backgroundSize: 'cover' }}>
+            
+            {/* Contact Header */}
+            <div className="absolute top-0 left-0 right-0 bg-[#00A884] text-white px-4 py-2.5 flex items-center gap-3 z-10 shadow-sm shrink-0">
+              <div className="w-7 h-7 bg-slate-200 rounded-full overflow-hidden flex-shrink-0">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="avatar" />
+              </div>
+              <div>
+                <p className="text-[12px] font-bold leading-tight">Ciudadano</p>
+                <p className="text-[9px] opacity-90 leading-tight">en línea</p>
+              </div>
             </div>
-            <div>
-              <p className="text-[13px] font-bold leading-tight">Ciudadano</p>
-              <p className="text-[10px] opacity-90 leading-tight">en línea</p>
-            </div>
-          </div>
 
-          <div className="mt-12 space-y-1">
-            {bloques.length === 0 ? (
-              <div className="bg-white/80 p-3 rounded-lg text-center mt-10 shadow-sm">
-                <p className="text-xs text-slate-500">El mensaje está vacío. Añade bloques para previsualizar.</p>
-              </div>
-            ) : (
-              <div className="bg-white p-2 rounded-xl rounded-tl-none shadow-sm ml-2 max-w-[90%] relative">
-                <div className="absolute -left-2 top-0 w-4 h-4 bg-white" style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}></div>
-                {bloques.map((bloque) => (
-                  <PreviewBloque key={bloque.id} bloque={bloque} />
-                ))}
-                <div className="text-[9px] text-slate-400 text-right mt-1">10:42 AM</div>
-              </div>
-            )}
+            <div className="mt-10 space-y-1 flex-1">
+              {bloques.length === 0 ? (
+                <div className="bg-white/90 p-3 rounded-lg text-center mt-12 shadow-sm border border-slate-200/50">
+                  <p className="text-xs text-slate-500">El mensaje está vacío. Añade bloques para previsualizar.</p>
+                </div>
+              ) : (
+                <div className="bg-white p-2 rounded-xl rounded-tl-none shadow-sm ml-2 max-w-[92%] relative mt-2">
+                  <div className="absolute -left-2 top-0 w-3 h-3 bg-white" style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}></div>
+                  {bloques.map((bloque) => (
+                    <PreviewBloque key={bloque.id} bloque={bloque} />
+                  ))}
+                  <div className="text-[8px] text-slate-400 text-right mt-1">10:42 AM</div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

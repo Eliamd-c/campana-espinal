@@ -129,7 +129,7 @@ export async function getEstadisticasCampanas() {
           COUNT(m.id)::int as total_mensajes,
           COUNT(m.id) FILTER (WHERE m.estado = 'enviado')::int as enviados,
           COUNT(m.id) FILTER (WHERE m.estado = 'pendiente')::int as pendientes,
-          COUNT(m.id) FILTER (WHERE m.estado = 'fallido_definitivo')::int as fallidos
+          COUNT(m.id) FILTER (WHERE m.estado = 'fallido')::int as fallidos
         FROM campanas c
         LEFT JOIN mensajes m ON c.id = m.campana_id
         WHERE c.estado != 'finalizada'

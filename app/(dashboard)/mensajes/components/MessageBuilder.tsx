@@ -9,7 +9,7 @@ import SaveTemplate from "./SaveTemplate";
 
 import { generarIdBloque, getConfigDefault } from "@/lib/message-builder/utils";
 import type { Bloque, BlockType } from "@/lib/message-builder/types";
-import { Save, RotateCcw, Paintbrush, ChevronRight } from "lucide-react";
+import { Save, RotateCcw, Paintbrush, ChevronRight, Eye, Settings } from "lucide-react";
 import { useEffect } from "react";
 
 interface MessageBuilderProps {
@@ -22,6 +22,7 @@ interface MessageBuilderProps {
 export default function MessageBuilder({ initialBloques = [], onContinue, nombreCampana, setNombreCampana }: MessageBuilderProps) {
   const [bloques, setBloques] = useState<Bloque[]>(initialBloques);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"editar" | "preview">("preview");
   const [isDirty, setIsDirty] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
 
@@ -30,6 +31,7 @@ export default function MessageBuilder({ initialBloques = [], onContinue, nombre
     if (initialBloques.length > 0) {
       setBloques(initialBloques);
       setSelectedBlockId(null);
+      setActiveTab("preview");
     }
   }, [initialBloques]);
 
@@ -42,6 +44,7 @@ export default function MessageBuilder({ initialBloques = [], onContinue, nombre
     };
     setBloques([...bloques, nuevoBloque]);
     setSelectedBlockId(nuevoBloque.id);
+    setActiveTab("editar");
     setIsDirty(true);
   }, [bloques]);
 
@@ -52,9 +55,19 @@ export default function MessageBuilder({ initialBloques = [], onContinue, nombre
 
   const eliminarBloque = useCallback((id: string) => {
     setBloques(bloques.filter((b) => b.id !== id));
-    if (selectedBlockId === id) setSelectedBlockId(null);
+    if (selectedBlockId === id) {
+      setSelectedBlockId(null);
+      setActiveTab("preview");
+    }
     setIsDirty(true);
   }, [bloques, selectedBlockId]);
+
+  const handleSelectBlock = useCallback((id: string | null) => {
+    setSelectedBlockId(id);
+    if (id) {
+      setActiveTab("editar");
+    }
+  }, []);
 
   const moverBloque = useCallback(
     (id: string, direccion: "up" | "down") => {
@@ -141,32 +154,71 @@ export default function MessageBuilder({ initialBloques = [], onContinue, nombre
         {/* Left Sidebar: Palette */}
         <BlocksPalette onAgregarBloque={agregarBloque} />
         
-        {/* Center: Canvas (Mock for now) */}
+        {/* Center: Canvas */}
         <Canvas
           bloques={bloques}
           selectedBlockId={selectedBlockId}
-          onSelectBlock={setSelectedBlockId}
+          onSelectBlock={handleSelectBlock}
           onDeleteBlock={eliminarBloque}
           onMoveBlock={moverBloque}
           onDragEnd={onDragEnd}
         />
         
-        {/* Right Sidebar: Preview & Editor */}
-        <div className="w-80 bg-white border-l border-slate-200 flex flex-col overflow-hidden">
-          <Preview bloques={bloques} />
-          
-          {selectedBlockId ? (
-            <BlockEditorPanel
-              bloque={bloques.find((b) => b.id === selectedBlockId)!}
-              onActualizar={(config) => actualizarBloque(selectedBlockId, config)}
-            />
-          ) : (
-            <div className="flex-1 p-4 bg-slate-50 overflow-y-auto flex items-center justify-center">
-              <div className="text-sm text-slate-400 text-center max-w-[200px]">
-                Selecciona un bloque del lienzo para editar sus propiedades
+        {/* Right Sidebar: Tabs for Preview & Properties Editor */}
+        <div className="w-[360px] bg-white border-l border-slate-200 flex flex-col overflow-hidden shrink-0">
+          {/* Tab Selector Header */}
+          <div className="flex border-b border-slate-200 bg-slate-50 p-1.5 gap-1 shrink-0">
+            <button
+              onClick={() => setActiveTab("preview")}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                activeTab === "preview"
+                  ? "bg-white text-indigo-600 shadow-sm border border-slate-200/50"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <Eye className="w-3.5 h-3.5" /> Vista Previa
+            </button>
+            <button
+              onClick={() => setActiveTab("editar")}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                activeTab === "editar"
+                  ? "bg-white text-indigo-600 shadow-sm border border-slate-200/50"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <Settings className="w-3.5 h-3.5" /> Propiedades
+            </button>
+          </div>
+
+          {/* Tab Content Container */}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {activeTab === "preview" ? (
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <Preview bloques={bloques} />
               </div>
-            </div>
-          )}
+            ) : selectedBlockId ? (
+              <BlockEditorPanel
+                bloque={bloques.find((b) => b.id === selectedBlockId)!}
+                onActualizar={(config) => actualizarBloque(selectedBlockId, config)}
+              />
+            ) : (
+              <div className="flex-1 p-6 bg-slate-50 flex flex-col items-center justify-center text-center">
+                <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 mb-3">
+                  <Settings className="w-5 h-5" />
+                </div>
+                <h4 className="text-xs font-bold text-slate-700 mb-1">Sin bloque seleccionado</h4>
+                <p className="text-[11px] text-slate-400 max-w-[200px] mb-4 leading-normal">
+                  Selecciona cualquier bloque de texto, imagen o encuesta en el lienzo de la izquierda para editar sus propiedades aquí.
+                </p>
+                <button
+                  onClick={() => setActiveTab("preview")}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-colors"
+                >
+                  Ver Vista Previa
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

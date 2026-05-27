@@ -42,7 +42,7 @@ export default function MensajesLayout({
     <div className="min-h-screen bg-slate-50/50 flex flex-col">
       {/* Tab Navigation Header */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-10 px-6 pt-4">
-        <div className="max-w-7xl mx-auto flex items-end space-x-1 overflow-x-auto no-scrollbar">
+        <div className="max-w-7xl xl:max-w-[1440px] mx-auto flex items-end space-x-1 overflow-x-auto no-scrollbar">
           {tabs.map((tab) => {
             const isActive = tab.exact
               ? pathname === tab.href
