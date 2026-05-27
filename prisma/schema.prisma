@@ -153,10 +153,6 @@ model Mensaje {
   requiere_accion    Boolean?    @default(false)
   tipo_accion        String?     @db.VarChar(20) // responder, investigar, derivar
 
-  // Extension/Polling columns
-  enviar_en          DateTime?
-  intentos           Int        @default(0)
-
   contacto Contacto?      @relation(fields: [contacto_cedula], references: [cedula])
   campana  Campana?       @relation(fields: [campana_id], references: [id])
   linea    LineaWhatsapp? @relation(fields: [linea_id], references: [id])
@@ -169,8 +165,6 @@ model Mensaje {
   @@index([es_respuesta])
   @@index([requiere_accion])
   @@index([campana_id, estado])
-  @@index([enviar_en])
-  @@index([estado, enviar_en, linea_id])
 
   @@map("mensajes")
 }
@@ -350,13 +344,6 @@ model LineaWhatsapp {
   ultimo_reinicio_limite DateTime?
   ultima_conexion       DateTime?
   fecha_creacion        DateTime  @default(now())
-
-  // Extension Columns
-  token_extension       String?   @unique @db.Text
-  extension_activa      Boolean   @default(false)
-  extension_ultima_vez  DateTime?
-  modo_envio            String    @default("normal") @db.VarChar(20)
-  mensajes_fallidos_hoy Int?      @default(0)
   
   mensajes              Mensaje[]
 
