@@ -4,7 +4,26 @@
       "Bash(npm run *)",
       "Bash(Start-Sleep -Seconds 5)",
       "Bash(Get-Content \"C:\\\\Users\\\\elamd\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-elamd-Documents-Aplicativo-Aplicativo-campana-espinal\\\\b1e809cc-30c8-4930-b638-1ee188e9da2f\\\\tasks\\\\beirrqp6t.output\" -Tail 20)",
-      "mcp__Claude_in_Chrome__tabs_context_mcp"
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(powershell -command \"Get-Content 'C:\\\\Users\\\\elamd\\\\Documents\\\\Aplicativo\\\\Aplicativo\\\\campana-espinal\\\\debug.log' -Tail 50\")",
+      "Bash(npx redis-cli *)",
+      "Bash(npx tsx *)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\elamd\\\\Documents\\\\Aplicativo\\\\Aplicativo\\\\campana-espinal\\\\app\\\\api\\\\campanas\\\\[id]\\\\continuar\")",
+      "Bash(npx tsc *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(node -e ' *)",
+      "Bash(echo \"Worker iniciado, PID: $!\")",
+      "Bash(docker start *)",
+      "Bash(npx ts-node *)",
+      "Bash(node -e 'const {PrismaClient} = require\\('\\\\''@prisma/client'\\\\''\\); const p = new PrismaClient\\(\\); p.lineaWhatsapp.findMany\\({select:{id:true,nombre:true,limite_diario:true,mensajes_enviados_hoy:true,estado:true}}\\).then\\(r=>{console.log\\(JSON.stringify\\(r,null,2\\)\\);p.$disconnect\\(\\)}\\)')",
+      "Bash(taskkill /F /FI \"WINDOWTITLE eq npm run bot*\")",
+      "Bash(taskkill /F /FI \"COMMANDLINE eq *worker*\")",
+      "Bash(wmic process *)",
+      "Bash(npx prisma *)",
+      "Bash(npm install *)",
+      "Bash(node -e \"require\\('whatsapp-web.js'\\); console.log\\('OK'\\)\")",
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts, null, 2\\)\\)\")",
+      "Bash(tasklist /FI \"IMAGENAME eq node.exe\" /FO CSV)"
     ]
   }
 }

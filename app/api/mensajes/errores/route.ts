@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { encolarMensajesMasivos } from "@/lib/whatsapp/queue";
-
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const campanaId = searchParams.get("campana_id");
@@ -48,7 +46,11 @@ export async function POST(req: NextRequest) {
         });
         
         if (mensaje && mensaje.contacto?.telefono) {
-          await encolarMensajesMasivos([mensaje]);
+          // Cambiar el estado a pendiente para que el motor local lo tome
+          await prisma.mensaje.update({
+            where: { id: error.mensaje_id },
+            data: { estado: "pendiente" }
+          });
           
           await prisma.mensajeError.update({
             where: { id: errorId },
