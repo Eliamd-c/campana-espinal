@@ -14,6 +14,50 @@ export interface RegistroEscaneado {
 }
 
 /**
+ * Un archivo de la tanda a escanear: una foto tomada con la cámara, una
+ * imagen subida, o un PDF de escáner que puede traer varias planillas dentro.
+ */
+export interface ArchivoPlanilla {
+  url: string;
+  nombre: string;
+  esPdf: boolean;
+}
+
+/**
+ * Junta los registros de varias páginas descartando repeticiones.
+ *
+ * Al fotografiar hoja por hoja es fácil repetir una, y un PDF puede traer la
+ * misma planilla escaneada dos veces. Si dos filas comparten cédula se queda
+ * la lectura más fiable, porque la segunda foto de la misma hoja suele salir
+ * mejor o peor, no igual. Las filas sin cédula no se agrupan: no hay manera
+ * de saber si son la misma persona.
+ */
+export function fusionarRegistros(paginas: RegistroEscaneado[][]): RegistroEscaneado[] {
+  const porCedula = new Map<string, RegistroEscaneado>();
+  const sinCedula: RegistroEscaneado[] = [];
+
+  const fiabilidad = (r: RegistroEscaneado) =>
+    r.cedula.confianza + r.nombre.confianza + r.telefono.confianza + r.barrio.confianza;
+
+  for (const pagina of paginas) {
+    for (const registro of pagina) {
+      const cedula = registro.cedula.valor;
+      if (!cedula) {
+        sinCedula.push(registro);
+        continue;
+      }
+
+      const previo = porCedula.get(cedula);
+      if (!previo || fiabilidad(registro) > fiabilidad(previo)) {
+        porCedula.set(cedula, registro);
+      }
+    }
+  }
+
+  return [...Array.from(porCedula.values()), ...sinCedula];
+}
+
+/**
  * Si el servidor no manda confianza para un campo, se asume dudosa. Antes
  * aquí se ponía 95 fijo a todo: la tabla de revisión marca en amarillo lo que
  * baja de 85, así que nunca se marcaba nada y el aviso de "revisa esto" era
@@ -33,8 +77,23 @@ function aCampo(valor: unknown, confianza: unknown): CampoOCR {
 }
 
 /**
- * Procesa una imagen enviándola a la API del servidor (Gemini 1.5 Flash)
- * y extrae los campos de la planilla.
+ * Error del OCR que conserva el código HTTP.
+ *
+ * Quien procesa una tanda necesita distinguir "esta hoja salió borrosa" de
+ * "se acabó el cupo de escaneos", porque en el segundo caso seguir pidiendo
+ * solo suma rechazos. Mirar el texto del mensaje para adivinarlo se rompe en
+ * cuanto alguien reescribe el aviso.
+ */
+export class ErrorOcr extends Error {
+  constructor(mensaje: string, readonly status: number) {
+    super(mensaje);
+    this.name = "ErrorOcr";
+  }
+}
+
+/**
+ * Procesa una imagen o un PDF enviándolo a la API del servidor
+ * (Gemini 1.5 Flash) y extrae los campos de la planilla.
  */
 export async function procesarPlanilla(
   imagenUrl: string,
@@ -60,7 +119,7 @@ export async function procesarPlanilla(
     const json = await res.json();
 
     if (!res.ok) {
-      throw new Error(json.error || "Error en el servidor OCR");
+      throw new ErrorOcr(json.error || "Error en el servidor OCR", res.status);
     }
 
     if (onProgress) onProgress(100);

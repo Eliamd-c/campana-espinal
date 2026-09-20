@@ -152,3 +152,33 @@ export const ImagenPlanillaSchema = z.object({
     )
     .max(MAX_BYTES_IMAGEN_OCR, "La imagen supera el tamaño admitido"),
 });
+
+/**
+ * Lo mismo, pero admitiendo además PDF.
+ *
+ * Un escáner de oficina no produce JPG: produce PDF, y a menudo con varias
+ * planillas dentro. Gemini lee PDF de forma nativa, así que el archivo va tal
+ * cual y no hay que rasterizarlo en el navegador.
+ *
+ * El PDF lleva un tope mayor que la imagen porque no se puede reducir en el
+ * cliente: un escaneo a 300 ppp de varias hojas pesa lo que pesa. Aun así se
+ * acota, porque el límite de la petición a Gemini y los 60 s de la ruta son
+ * reales.
+ */
+export const MAX_BYTES_PDF_OCR = 12_000_000;
+
+const RE_IMAGEN = /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=\s]+$/;
+const RE_PDF = /^data:application\/pdf;base64,[A-Za-z0-9+/=\s]+$/;
+
+export const ArchivoPlanillaSchema = z.object({
+  imagenUrl: z
+    .string()
+    .refine(
+      (v) => RE_IMAGEN.test(v) || RE_PDF.test(v),
+      "El archivo debe ser una imagen (png, jpg, webp) o un PDF"
+    )
+    .refine(
+      (v) => v.length <= (RE_PDF.test(v) ? MAX_BYTES_PDF_OCR : MAX_BYTES_IMAGEN_OCR),
+      "El archivo supera el tamaño admitido"
+    ),
+});
