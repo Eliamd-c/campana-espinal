@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { logger } from "@/lib/logger";
 import { handleError } from "@/lib/api/errors";
 import { z } from "zod";
 
@@ -63,7 +64,13 @@ export async function GET(req: NextRequest) {
     const resultados = await prisma.$queryRawUnsafe<any[]>(query, ...queryParams);
     const totalResultados = resultados.length;
 
-    console.log(`[Search API] Búsqueda completada en ${Date.now() - startTime}ms. Query: "${q}", Resultados: ${totalResultados}`);
+    // El término buscado suele ser el nombre o la cédula de una persona: se
+    // registra el rendimiento, no lo que se buscó.
+    logger.info("[busqueda] Consulta completada", {
+      duracionMs: Date.now() - startTime,
+      resultados: totalResultados,
+      tipo,
+    });
 
     return NextResponse.json({
       data: resultados,

@@ -77,7 +77,8 @@ export async function traceSearch<T>(
     const duration = Date.now() - start;
     logger.info(`[SEARCH] "${query}" completado en ${duration}ms`, {
       type: "search_trace",
-      query,
+      // El término buscado es un nombre o una cédula: no se registra.
+    // query,
       duration_ms: duration,
       status: "success",
     });
@@ -86,7 +87,8 @@ export async function traceSearch<T>(
     const duration = Date.now() - start;
     logger.error(`[SEARCH] "${query}" falló en ${duration}ms`, {
       type: "search_trace",
-      query,
+      // El término buscado es un nombre o una cédula: no se registra.
+    // query,
       duration_ms: duration,
       status: "error",
       error: error.message || String(error),

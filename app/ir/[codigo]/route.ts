@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { logger } from "@/lib/logger";
 
+/**
+ * Acortador de enlaces que se envían a los votantes por WhatsApp.
+ *
+ * Es pública por necesidad: la abre cualquiera desde su móvil, sin sesión.
+ * Eso obliga a desconfiar de todo lo que llega por la URL y de la propia
+ * dirección de destino guardada en la base.
+ */
 export async function GET(
   req: NextRequest,
   { params }: { params: { codigo: string } }
@@ -8,44 +16,77 @@ export async function GET(
   const { codigo } = params;
 
   try {
-    // 1. Buscar el enlace corto en la base de datos
-    const enlace = await prisma.enlaceCorto.findUnique({
-      where: { codigo },
-    });
-
-    if (!enlace) {
-      // Si el enlace no existe, redirigir al inicio del dashboard o a una página 404
+    // El código va en la ruta: se acota antes de consultar.
+    if (!codigo || codigo.length > 64) {
       return NextResponse.redirect(new URL("/", req.url));
     }
 
-    // 2. Extraer parámetros opcionales de rastreo (ej: ?u=123456)
-    // El parámetro 'u' contendrá la cédula del contacto a rastrear
-    const searchParams = req.nextUrl.searchParams;
-    const contactoCedula = searchParams.get("u");
+    const enlace = await prisma.enlaceCorto.findUnique({ where: { codigo } });
 
-    // 3. Registrar el clic silenciosamente si viene con una cédula válida
-    if (contactoCedula) {
-      // Usamos una promesa sin await bloqueante fuerte si es posible,
-      // o un try/catch para que un error de rastreo no impida la redirección.
+    if (!enlace) {
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+
+    /**
+     * Registro del clic. El parámetro `u` lo puede escribir cualquiera que
+     * reciba el enlace, así que antes se comprobaba nada: se podían crear
+     * filas de rastreo con cédulas inventadas, ensuciando la analítica de la
+     * campaña y engordando la tabla sin límite.
+     *
+     * Ahora debe tener forma de cédula y corresponder a un contacto real. El
+     * resultado no cambia la respuesta —siempre se redirige igual—, así que
+     * esto no sirve para averiguar qué cédulas existen.
+     */
+    const cedula = req.nextUrl.searchParams.get("u");
+
+    if (cedula && /^\d{4,12}$/.test(cedula)) {
       try {
-        await prisma.clicRastreo.create({
-          data: {
-            codigo_enlace: codigo,
-            contacto_cedula: contactoCedula,
-          },
+        const contacto = await prisma.contacto.findUnique({
+          where: { cedula },
+          select: { cedula: true },
         });
-        
-        // Opcional: Podríamos sumar puntos automáticamente al líder o al contacto por interactuar.
+
+        if (contacto) {
+          await prisma.clicRastreo.create({
+            data: { codigo_enlace: codigo, contacto_cedula: contacto.cedula },
+          });
+        }
       } catch (err) {
-        console.error("Error al registrar clic de rastreo:", err);
+        // Un fallo del rastreo nunca debe impedir que la persona llegue a su
+        // destino: es una métrica, no el servicio.
+        logger.warn("[acortador] No se pudo registrar el clic", {
+          error: String(err),
+        });
       }
     }
 
-    // 4. Redirigir instantáneamente a la URL original de Facebook/Youtube
-    return NextResponse.redirect(enlace.url_original);
-    
+    /**
+     * El destino lo escribe quien crea el enlace desde el panel. Se comprueba
+     * el esquema antes de redirigir: un `javascript:` o un `data:` guardado
+     * ahí convertiría cada enlace enviado a los votantes en un ataque contra
+     * quien lo abre.
+     */
+    let destino: URL;
+    try {
+      destino = new URL(enlace.url_original);
+    } catch {
+      logger.warn("[acortador] Enlace con destino mal formado", { codigo });
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+
+    if (destino.protocol !== "https:" && destino.protocol !== "http:") {
+      logger.warn("[acortador] Enlace con esquema no permitido", {
+        codigo,
+        esquema: destino.protocol,
+      });
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+
+    return NextResponse.redirect(destino.toString());
   } catch (error) {
-    console.error("Error crítico en acortador:", error);
+    logger.error("[acortador] Error al resolver el enlace", {
+      error: String(error),
+    });
     return NextResponse.redirect(new URL("/", req.url));
   }
 }

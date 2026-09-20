@@ -29,13 +29,13 @@ export async function generarEmbeddingConCache(texto: string): Promise<number[]>
     // 1. Intentar obtener del caché de Redis
     const cached = (await redis.get(cacheKey)) as string | null | Record<string, any> | number[];
     if (cached) {
-      console.log(`[EmbeddingCache] ✅ Cache hit para: "${texto.substring(0, 30)}..."`);
+      console.log("[EmbeddingCache] Acierto de cache");
       if (typeof cached === "object") return cached as number[];
       return JSON.parse(cached as string) as number[];
     }
 
     // 2. Generar embedding real llamando a la API de Gemini
-    console.log(`[EmbeddingCache] 🔄 Cache miss, llamando a Gemini para: "${texto.substring(0, 30)}..."`);
+    console.log("[EmbeddingCache] Fallo de cache; se consulta a Gemini");
     const genAI = getGeminiClient();
     const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
     const result = await model.embedContent(texto);
@@ -74,7 +74,7 @@ export async function generarEmbeddingsBatch(textos: string[]): Promise<number[]
       } else {
         resultados.set(i, JSON.parse(cached as string) as number[]);
       }
-      console.log(`[EmbeddingCache] ✅ Cache hit batch: "${textos[i].substring(0, 20)}..."`);
+      console.log("[EmbeddingCache] Acierto de cache en lote");
     } else {
       textosPorGenerar.push({ index: i, texto: textos[i] });
     }
