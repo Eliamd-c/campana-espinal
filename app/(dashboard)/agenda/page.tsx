@@ -28,15 +28,28 @@ export default function AgendaPage() {
 
   const handleInterpretar = async () => {
     setInterpretando(true);
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/agenda/interpretar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: textoIA })
+      });
+      const data = await res.json();
+      
+      if (data.error) throw new Error(data.error);
+
       setFormAgenda(prev => ({
         ...prev,
-        titulo: 'Reunión autogenerada por IA',
-        fecha_inicio: new Date().toISOString().slice(0, 16)
+        titulo: data.titulo || 'Reunión autogenerada por IA',
+        fecha_inicio: data.fecha ? data.fecha.slice(0, 16) : new Date().toISOString().slice(0, 16)
       }));
+      
+      alert("La IA extrajo exitosamente los datos de tu texto.");
+    } catch(e: any) {
+      alert("Error al interpretar: " + e.message);
+    } finally {
       setInterpretando(false);
-      alert("La IA ha interpretado los campos automáticamente.");
-    }, 1500);
+    }
   };
 
   const agendar = (e: React.FormEvent) => {
