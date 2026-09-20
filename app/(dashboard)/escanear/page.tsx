@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Link from "next/link";
 import { Camara } from "@/components/escanear/Camara";
 import { TablaRevision } from "@/components/escanear/TablaRevision";
 import {
@@ -110,14 +111,24 @@ export default function EscanearPage() {
             Fotografía o sube las planillas físicas para registrar los asistentes
           </p>
         </div>
-        {estado !== "inicio" && (
-          <button
-            onClick={reiniciar}
-            className="text-sm text-gray-500 hover:text-gray-800 flex items-center gap-1"
-          >
-            ↩ Nueva captura
-          </button>
-        )}
+        <div className="flex items-center gap-4">
+          {estado === "inicio" && (
+            <Link
+              href="/escanear/planilla"
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap"
+            >
+              🖨 Imprimir planilla en blanco
+            </Link>
+          )}
+          {estado !== "inicio" && (
+            <button
+              onClick={reiniciar}
+              className="text-sm text-gray-500 hover:text-gray-800 flex items-center gap-1"
+            >
+              ↩ Nueva captura
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Aviso de OCR (error total o incidencias parciales) */}
