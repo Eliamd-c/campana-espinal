@@ -12,7 +12,7 @@ Estados: `PENDIENTE` · `EN CURSO` · `RESUELTO` · `ACEPTADO` (riesgo asumido, 
 | 5 | Webhooks Evolution sin validar firma/origen | Crítica | **RESUELTO** (requiere reconfigurar el emisor) |
 | 6 | 4 vulns críticas + 20 altas en dependencias de producción | Crítica | **RESUELTO** (de 35 a 3) |
 | 7 | `ignoreBuildErrors` / `ignoreDuringBuilds` en `next.config.mjs` | Alta | **RESUELTO** |
-| 8 | Sin cabeceras de seguridad ni CSP | Alta | **RESUELTO** |
+| 8 | Sin cabeceras de seguridad ni CSP | Alta | **RESUELTO**, salvo la CSP en producción (#8b) |
 | 9 | Rate limiting solo en 4 de 51 rutas | Alta | **RESUELTO** |
 | 10 | Prompt injection vía WhatsApp entrante y OCR | Alta | **RESUELTO** |
 | 11 | `server.js` sin TLS ni `trust proxy` | Alta | **RESUELTO** |
@@ -28,6 +28,7 @@ Estados: `PENDIENTE` · `EN CURSO` · `RESUELTO` · `ACEPTADO` (riesgo asumido, 
 | 22b | La revocación no es inmediata: el middleware valida firma, no estado | Alta | **MITIGADO** |
 | 16b | Storage de Supabase: bucket `media` con la clave pública | Alta | **RESUELTO** (falta la clave de servicio) |
 | 10b | Inyección indirecta por documentos RAG y por campos de la base | Media | **RESUELTO** |
+| 8b | El hosting recorta la CSP: solo llega `upgrade-insecure-requests` | Media | PENDIENTE |
 | 19 | **El repositorio de GitHub es PÚBLICO** | Crítica | **REQUIERE DECISIÓN** |
 | 20 | Sesión de WhatsApp (`creds.json` de Baileys) en el historial público | Crítica | **REQUIERE ACCIÓN** |
 | 21 | Contraseña de Supabase escrita en dos scripts publicados | Crítica | **RESUELTO** en código, falta rotar |
@@ -844,3 +845,51 @@ Project Settings > API Keys > *secret*). Hasta entonces, subir una imagen
 devuelve 503 con un mensaje claro. Esa clave **solo puede vivir en el
 servidor**: se salta Row Level Security por completo, así que nunca debe ir
 en una variable `NEXT_PUBLIC_*`.
+
+## Despliegue en producción (2026-09-20)
+
+`https://app.conectados.art`, en Hostinger. Comprobado desde fuera:
+
+| Petición | Respuesta |
+|---|---|
+| `GET /` sin sesión | 307 → `/login?callbackUrl=%2F` |
+| `GET /api/contactos` sin sesión | 401 |
+| `GET /api/auth/csrf` | 200 |
+
+El control de acceso funciona en producción, no solo en local.
+
+**Cabeceras que llegan íntegras**: `X-Frame-Options: DENY`,
+`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`,
+`Strict-Transport-Security`. Y `x-powered-by` no se emite.
+
+### #8b — La CSP llega recortada
+
+Lo que recibe el navegador es solo `upgrade-insecure-requests`, seguido de
+unos 440 espacios en blanco. Desaparecen `default-src`, `script-src`,
+`connect-src`, `form-action`, `object-src` y `base-uri`.
+
+El relleno con espacios indica que algo la reescribe **en el sitio**,
+sobrescribiendo el valor y rellenando el hueco: apunta a LiteSpeed o al panel
+de Hostinger, no al código. La aplicación la envía completa, verificado en
+local.
+
+Lo que se pierde es la mitad útil: `connect-src` era lo que impedía que un
+script inyectado enviara el padrón a un servidor ajeno. Amortigua el golpe
+que `X-Frame-Options: DENY` sí llega, así que el clickjacking sigue cubierto.
+
+Por revisar, en este orden:
+1. Si hPanel tiene una sección de cabeceras de seguridad imponiendo su propia
+   política.
+2. Acortar la política a lo esencial, por si el límite es de longitud
+   (la actual ronda los 600 caracteres; la recortada, unos 250).
+3. Emitirla desde el middleware en vez de `next.config.mjs`.
+
+### Pendiente del responsable
+
+- Cambiar la contraseña de `admin`: se generó durante la auditoría y viajó por
+  el chat.
+- Poner el repositorio en privado.
+- Rotar `GEMINI_API_KEY`.
+- Ficheros sensibles en disco (#12): `.wwebjs_auth/` (868 MB),
+  `_bot_apagado/auth_info_baileys/`, el padrón en CSV y XLSX, y el respaldo
+  en `D:\Instagram Genius\`.
