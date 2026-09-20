@@ -3,18 +3,17 @@ import prisma from "@/lib/db";
 import { perfilarIntencionVoto } from "@/lib/whatsapp/profiler";
 import { handleError, unauthorized } from "@/lib/api/errors";
 import { logger } from "@/lib/logger";
+import { verificarSecretoWebhook } from "@/lib/webhooks/verificar";
 
 // POST /api/whatsapp/webhook
 export async function POST(req: NextRequest) {
   try {
-    // 🔐 Protección con secreto interno
-    const secret = req.headers.get("x-internal-secret");
-    if (secret !== process.env.INTERNAL_WEBHOOK_SECRET) {
-      logger.warn("Intento de acceso no autorizado a Webhook", { 
-        ip: req.ip,
-        userAgent: req.headers.get("user-agent")
-      });
-      throw unauthorized("Secreto de webhook inválido");
+    // Comparacion en tiempo constante: un `!==` sobre cadenas termina en el
+    // primer caracter distinto, y esa diferencia de tiempo permite adivinar
+    // el secreto caracter a caracter.
+    const verificacion = verificarSecretoWebhook(req, "INTERNAL_WEBHOOK_SECRET");
+    if (!verificacion.ok) {
+      throw unauthorized("Secreto de webhook invalido");
     }
 
     const body = await req.json();
@@ -44,15 +43,17 @@ export async function POST(req: NextRequest) {
     // 3. Si el contacto existe, perfilar intención silenciosamente
     if (contacto) {
       // Fire-and-forget
-      perfilarIntencionVoto(contacto.cedula, texto).catch(err =>
-        logger.error("Error en perfilamiento automático", { cedula: contacto.cedula, error: err })
+      perfilarIntencionVoto(contacto.cedula, texto).catch((err) =>
+        // Sin la cédula: identificar a la persona en un registro de error no
+        // aporta nada para depurar y sí expone un dato sensible.
+        logger.error("Error en perfilamiento automático", { error: String(err) })
       );
     }
 
-    logger.info("Mensaje recibido vía Webhook", { 
-      instancia: instancia_id, 
-      numero, 
-      contacto_encontrado: !!contacto 
+    logger.info("Mensaje recibido vía Webhook", {
+      instancia: instancia_id,
+      contacto_encontrado: !!contacto,
+      longitud: typeof texto === "string" ? texto.length : 0,
     });
 
     return NextResponse.json({ ok: true, mensaje_id: mensajeDb.id });

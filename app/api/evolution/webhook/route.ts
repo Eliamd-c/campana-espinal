@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { verificarSecretoWebhook } from "@/lib/webhooks/verificar";
 
 /**
  * POST /api/evolution/webhook
@@ -11,6 +12,14 @@ import prisma from "@/lib/db";
  */
 export async function POST(req: NextRequest) {
   try {
+    // Esta ruta es publica por necesidad (Evolution no trae sesion de
+    // usuario): el secreto compartido es lo unico que la separa de
+    // cualquiera que conozca la URL.
+    const verificacion = verificarSecretoWebhook(req, "EVOLUTION_WEBHOOK_SECRET");
+    if (!verificacion.ok) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
     const body = await req.json();
 
     const event: string = body.event || "";

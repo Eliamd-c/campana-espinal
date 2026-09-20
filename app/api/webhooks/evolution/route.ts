@@ -1,13 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { logger } from "@/lib/logger";
+import { verificarSecretoWebhook, esEventoNuevo } from "@/lib/webhooks/verificar";
 
 const apiHost = process.env.EVOLUTION_API_URL;
 const apiKey = process.env.EVOLUTION_API_KEY;
 
 export async function POST(req: NextRequest) {
   try {
+    // Sin esta comprobacion se pueden inyectar mensajes entrantes falsos y
+    // disparar auto-respuestas de IA hacia numeros arbitrarios.
+    const verificacion = verificarSecretoWebhook(req, "EVOLUTION_WEBHOOK_SECRET");
+    if (!verificacion.ok) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
     const payload = await req.json();
-    console.log(`[EVOLUTION WEBHOOK] Recibido evento: ${payload.event} para ${payload.instance}`);
+    logger.info("[webhook] Evento recibido", {
+      evento: String(payload.event ?? "").slice(0, 40),
+      instancia: String(payload.instance ?? "").slice(0, 40),
+    });
 
     const instanceName = payload.instance;
     if (!instanceName || !instanceName.startsWith("linea_")) {
@@ -42,7 +54,9 @@ export async function POST(req: NextRequest) {
               }
             }
           } catch (e) {
-            console.error(`[EVOLUTION WEBHOOK] Error consultando número de teléfono para ${instanceName}:`, e);
+            logger.warn("[webhook] No se pudo consultar el número de la línea", {
+              instancia: instanceName,
+            });
           }
         }
 
@@ -79,6 +93,16 @@ export async function POST(req: NextRequest) {
     if (payload.event === "messages.upsert") {
       const data = payload.data;
       const key = data?.key;
+
+      /**
+       * El id del mensaje lo asigna WhatsApp y es único. Si el mismo evento
+       * llega dos veces -- por un reenvío del proveedor o por alguien que
+       * repite una petición capturada -- se descarta: si no, se duplican los
+       * mensajes en la base y se vuelve a disparar la respuesta automática.
+       */
+      if (!esEventoNuevo(key?.id)) {
+        return NextResponse.json({ success: true, message: "Evento repetido" });
+      }
       const message = data?.message;
 
       // Ignorar si el mensaje fue enviado por nosotros mismos
@@ -94,13 +118,24 @@ export async function POST(req: NextRequest) {
       const isAudio = message.audioMessage || message.documentMessage?.mimetype?.includes("audio");
 
       if (text && apiHost && apiKey) {
-        console.log(`[EVOLUTION WEBHOOK] Mensaje de texto de ${remoteJid}: "${text}"`);
+        // Ni el número ni el contenido del mensaje van al registro: son
+        // datos personales de un votante, y los logs se copian, se rotan y
+        // acaban en sitios que nadie audita.
+        logger.info("[webhook] Mensaje de texto recibido", {
+          linea: lineaId,
+          longitud: text.length,
+        });
         
         try {
           const origin = req.nextUrl.origin;
+          // La llamada es servidor-a-servidor y no lleva sesión de usuario:
+          // se autentica con el secreto interno, igual que los webhooks.
           const procesarRes = await fetch(`${origin}/api/whatsapp/procesar-mensaje`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-secret": process.env.INTERNAL_WEBHOOK_SECRET ?? "",
+            },
             body: JSON.stringify({
               audioBase64: null,
               texto: text,
@@ -113,7 +148,7 @@ export async function POST(req: NextRequest) {
           if (procesarRes.ok) {
             const procesarJson = await procesarRes.json();
             if (procesarJson.success && procesarJson.mensaje) {
-              console.log(`[EVOLUTION WEBHOOK] Enviando auto-respuesta IA a ${remoteJid}...`);
+              logger.info("[webhook] Enviando auto-respuesta de IA", { linea: lineaId });
               
               // Responder usando Evolution API
               await fetch(`${apiHost}/message/sendText/${instanceName}`, {
