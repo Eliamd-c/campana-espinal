@@ -37,6 +37,7 @@ export const PERMISOS = {
   // ── Agenda ─────────────────────────────────────────────────────────────
   AGENDA_VER: "agenda.ver",
   AGENDA_EDITAR: "agenda.editar",
+  AGENDA_PLANTILLAS: "agenda.plantillas",
 
   // ── Puestos y mesas ────────────────────────────────────────────────────
   MESAS_VER: "mesas.ver",
@@ -107,6 +108,11 @@ export const GRUPOS_DE_PERMISOS: {
     permisos: [
       { permiso: PERMISOS.AGENDA_VER, etiqueta: "Ver la agenda" },
       { permiso: PERMISOS.AGENDA_EDITAR, etiqueta: "Crear y modificar eventos" },
+      {
+        permiso: PERMISOS.AGENDA_PLANTILLAS,
+        etiqueta: "Crear y editar plantillas de agenda",
+        advertencia: "Quien define las plantillas decide qué se puede confirmar.",
+      },
     ],
   },
   {

@@ -448,3 +448,91 @@ model MessageDraft {
   @@index([usuario_id])
   @@map("message_drafts")
 }
+
+// ==========================================
+// Módulo de Agenda (Nuevo Modelo)
+// ==========================================
+
+model PlantillaAgenda {
+  id                   String   @id @default(uuid())
+  nombre               String   @db.VarChar(120)
+  descripcion          String?  @db.Text
+  icono                String?  @db.VarChar(40)
+  color                String?  @db.VarChar(20)
+  campos               Json
+  recursos_sugeridos   Json
+  requiere_aprobacion  Boolean  @default(false)
+  duracion_default_min Int?
+  activa               Boolean  @default(true)
+  creada_por           String   @db.VarChar(80)
+  fecha_creada         DateTime @default(now())
+  veces_usada          Int      @default(0)
+
+  agendamientos        Agendamiento[]
+
+  @@map("plantillas_agenda")
+}
+
+model Agendamiento {
+  id                   String   @id @default(uuid())
+  plantilla_id         String
+  reglas_congeladas    Json
+  titulo               String   @db.VarChar(200)
+  fecha_inicio         DateTime
+  fecha_fin            DateTime?
+  barrio               String?  @db.VarChar(80)
+  direccion            String?  @db.VarChar(200)
+  datos                Json
+  estado               String   @db.VarChar(20)
+  lider_id             Int?
+  responsable          String?  @db.VarChar(80)
+  asistentes_esperados Int?
+  asistentes_reales    Int?
+  presupuesto_estimado Float?
+  presupuesto_real     Float?
+  notas                String?  @db.Text
+  texto_original       String?  @db.Text
+  creado_por           String   @db.VarChar(80)
+  confirmado_por       String?  @db.VarChar(80)
+  fecha_confirmado     DateTime?
+  fecha_creado         DateTime @default(now())
+  fecha_actualizado    DateTime @updatedAt
+
+  plantilla            PlantillaAgenda @relation(fields: [plantilla_id], references: [id])
+  campos_por_confirmar CampoPorConfirmar[]
+  recursos_solicitados RecursoSolicitado[]
+
+  @@map("agendamientos")
+}
+
+model CampoPorConfirmar {
+  id              String   @id @default(uuid())
+  agendamiento_id String
+  campo           String   @db.VarChar(60)
+  marcado_por     String   @db.VarChar(80)
+  fecha_marcado   DateTime @default(now())
+  resuelto        Boolean  @default(false)
+  fecha_resuelto  DateTime?
+
+  agendamiento    Agendamiento @relation(fields: [agendamiento_id], references: [id], onDelete: Cascade)
+
+  @@unique([agendamiento_id, campo])
+  @@map("campos_por_confirmar")
+}
+
+model RecursoSolicitado {
+  id                  String   @id @default(uuid())
+  agendamiento_id     String
+  item                String   @db.VarChar(120)
+  cantidad_solicitada Int?
+  cantidad_conseguida Int?
+  estado              String   @db.VarChar(20)
+  responsable         String?  @db.VarChar(80)
+  notas               String?  @db.Text
+  orden               Int
+
+  agendamiento        Agendamiento @relation(fields: [agendamiento_id], references: [id], onDelete: Cascade)
+
+  @@index([agendamiento_id])
+  @@map("recursos_solicitados")
+}
