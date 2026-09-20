@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import puppeteer from "puppeteer";
 
 // POST /api/registraduria
 // Recibe: { cedula: string }
@@ -11,8 +10,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "La cédula es obligatoria" }, { status: 400 });
     }
 
-    // Nota: El web scraping en la Registraduría puede requerir bypass de CAPTCHAs.
-    // Esto es un shell funcional usando Puppeteer.
+    // Nota: el scraping de la Registraduria esta sin implementar; la ruta
+    // devuelve datos de ejemplo. Cuando se retome, el navegador headless se
+    // importa aqui dentro y no en la cabecera del modulo: un `import` de
+    // puppeteer en el arbol de la aplicacion web arrastra Chromium entero y
+    // sus vulnerabilidades a un codigo que no lo usa.
     
     // const browser = await puppeteer.launch({ headless: "new" });
     // const page = await browser.newPage();
