@@ -25,8 +25,15 @@ import { Printer, ArrowLeft } from "lucide-react";
  *   corregir la inclinación en un preprocesado que todavía no existe. Se
  *   imprimen porque no cuestan nada y dejan la hoja lista para ese paso.
  *
- * Las columnas son justo los cuatro campos que el OCR extrae. Una columna que
- * nadie lee solo roba ancho a las que sí importan.
+ * La hoja es oficio (21 x 33 cm) en horizontal. Apaisado el ancho sobra y el
+ * alto escasea, que es justo al revés que en A4 vertical: por eso caben menos
+ * personas por hoja, pero cada renglón puede permitirse columnas anchas para
+ * el nombre y para la firma sin apretar las casillas de los números.
+ *
+ * Las columnas de datos son justo los cuatro campos que el OCR extrae. La de
+ * firma no se transcribe: está porque la planilla tiene valor como
+ * constancia de asistencia, y el prompt del OCR recibe el aviso de que esa
+ * columna se ignora, para que un garabato no acabe convertido en un barrio.
  */
 
 const CASILLAS_CEDULA = 10;
@@ -35,15 +42,21 @@ const CASILLAS_TELEFONO = 10;
 /**
  * Alto de renglón según cuántas personas quepan en la hoja.
  *
- * Medido sobre A4: la cabecera y el pie se comen unos 69 mm, así que quedan
- * ~212 mm para la tabla. Con renglón de 11 mm caben 15 filas; para 20 o 25 hay
- * que apretar, y apretar es una concesión: cuanto más bajo el renglón, más
- * fácil es que una letra invada la fila de abajo y el OCR la lea mal.
+ * Medido sobre oficio apaisado: quedan 194 mm de alto útil y la cabecera con
+ * el pie se comen 48 mm, así que la tabla dispone de ~146 mm. El renglón se
+ * estira todo lo que permita el número de personas pedido, en vez de dejar
+ * hueco al final: cuanto más bajo el renglón, más fácil es que una letra
+ * invada la fila de abajo y el OCR la lea mal.
+ *
+ * Se reservan unos 8 mm de colchón a propósito: el alto de la cabecera
+ * depende de lo que ocupe el título de la reunión, y uno largo se va a dos
+ * líneas. Sin ese margen, poner un nombre de evento kilométrico empujaría la
+ * última fila a una segunda hoja.
  */
 function medidasFila(filas: number) {
-  if (filas >= 25) return { fila: "8mm", casilla: "6.2mm" };
-  if (filas >= 20) return { fila: "9mm", casilla: "7mm" };
-  return { fila: "11mm", casilla: "8.5mm" };
+  if (filas >= 18) return { fila: "7.5mm", casilla: "5.8mm" };
+  if (filas >= 15) return { fila: "9mm", casilla: "7mm" };
+  return { fila: "11.5mm", casilla: "8.9mm" };
 }
 
 interface EventoResumen {
@@ -59,7 +72,7 @@ export default function GenerarPlanillaPage() {
   const [lugar, setLugar] = useState("");
   const [fecha, setFecha] = useState("");
   const [barrio, setBarrio] = useState("");
-  const [filas, setFilas] = useState(15);
+  const [filas, setFilas] = useState(12);
   const [eventos, setEventos] = useState<EventoResumen[]>([]);
 
   /**
@@ -123,10 +136,11 @@ export default function GenerarPlanillaPage() {
           }
           .no-imprimir { display: none !important; }
           /* El relleno de la vista previa se quita en papel: con él, las
-             columnas de casillas no caben en el ancho de un A4. */
+             columnas de casillas no caben en el ancho de la hoja. */
           .planilla { padding: 0 !important; border-radius: 0 !important; }
-          .hoja-interna { padding: 6mm 4mm !important; }
-          @page { size: A4 portrait; margin: 8mm; }
+          .hoja-interna { padding: 4mm !important; }
+          /* Oficio (21 x 33 cm) en horizontal. */
+          @page { size: 330mm 210mm; margin: 8mm; }
         }
       `}</style>
 
@@ -214,9 +228,9 @@ export default function GenerarPlanillaPage() {
                 onChange={(e) => setFilas(Number(e.target.value))}
                 className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                {[10, 15, 20, 25].map((n) => (
+                {[8, 10, 12, 15, 18].map((n) => (
                   <option key={n} value={n}>
-                    {n} personas {n >= 25 ? "(renglón más apretado)" : ""}
+                    {n} personas {n >= 18 ? "(renglón muy apretado)" : n >= 15 ? "(renglón apretado)" : ""}
                   </option>
                 ))}
               </select>
@@ -231,7 +245,7 @@ export default function GenerarPlanillaPage() {
               <Printer className="w-4 h-4" /> Imprimir planilla
             </button>
             <span className="text-xs text-gray-500">
-              En el diálogo de impresión elige A4 y desactiva encabezados y pies de página.
+              En el diálogo elige tamaño Oficio/Legal (21 x 33 cm), orientación horizontal, y desactiva encabezados y pies de página.
             </span>
           </div>
         </div>
@@ -245,10 +259,10 @@ export default function GenerarPlanillaPage() {
         <div className="absolute bottom-3 left-3 w-5 h-5 bg-black" />
         <div className="absolute bottom-3 right-3 w-5 h-5 bg-black" />
 
-        <div className="hoja-interna px-6 pt-4 pb-6">
-          <h2 className="text-center text-xl font-bold tracking-wide">PLANILLA DE ASISTENCIA</h2>
+        <div className="hoja-interna px-6 pt-3 pb-4">
+          <h2 className="text-center text-lg font-bold tracking-wide">PLANILLA DE ASISTENCIA</h2>
 
-          <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+          <div className="mt-2 grid grid-cols-4 gap-x-6 text-sm">
             <p>
               <strong>Reunión:</strong> {titulo || "______________________________"}
             </p>
@@ -264,7 +278,7 @@ export default function GenerarPlanillaPage() {
           </div>
 
           <p
-            className="mt-3 text-center text-[11px] font-semibold border border-dashed rounded px-2 py-1.5"
+            className="mt-2 text-center text-[11px] font-semibold border border-dashed rounded px-2 py-1"
             style={{ borderColor: "var(--borde-fuerte)" }}
           >
             ESCRIBA EN LETRA IMPRENTA MAYÚSCULA, CON BOLÍGRAFO NEGRO O AZUL OSCURO.
@@ -272,10 +286,10 @@ export default function GenerarPlanillaPage() {
           </p>
 
           {/* Tabla */}
-          <table className="mt-4 w-full border-collapse text-[11px]">
+          <table className="mt-3 w-full border-collapse text-[11px]">
             <thead>
               <tr>
-                {["N°", "CÉDULA", "NOMBRE Y APELLIDOS", "TELÉFONO", "BARRIO"].map((h) => (
+                {["N°", "CÉDULA", "NOMBRE Y APELLIDOS", "TELÉFONO", "BARRIO", "FIRMA"].map((h) => (
                   <th
                     key={h}
                     className="border px-1 py-1 font-bold text-[10px] tracking-wide"
@@ -314,7 +328,7 @@ export default function GenerarPlanillaPage() {
                   </td>
 
                   {/* Texto libre: sin cuadrícula interna, para no partir el trazo */}
-                  <td className="border" style={{ borderColor: "var(--borde)", minWidth: "50mm" }} />
+                  <td className="border" style={{ borderColor: "var(--borde)", minWidth: "75mm" }} />
 
                   <td className="border p-0.5" style={{ borderColor: "var(--borde)" }}>
                     <div className="flex gap-[1px] justify-center">
@@ -332,13 +346,17 @@ export default function GenerarPlanillaPage() {
                     </div>
                   </td>
 
-                  <td className="border" style={{ borderColor: "var(--borde)", minWidth: "25mm" }} />
+                  <td className="border" style={{ borderColor: "var(--borde)", minWidth: "38mm" }} />
+
+                  {/* Firma: no se transcribe, solo tiene que caber sin
+                      montarse sobre el nombre de al lado. */}
+                  <td className="border" style={{ borderColor: "var(--borde)", minWidth: "55mm" }} />
                 </tr>
               ))}
             </tbody>
           </table>
 
-          <div className="mt-4 flex justify-between text-[10px] px-8" style={{ color: "var(--texto-guia)" }}>
+          <div className="mt-2 flex justify-between text-[10px] px-8" style={{ color: "var(--texto-guia)" }}>
             <span>Responsable de la planilla: ______________________________</span>
             <span>Hoja ______ de ______</span>
           </div>
