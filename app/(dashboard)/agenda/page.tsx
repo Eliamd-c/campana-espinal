@@ -11,26 +11,111 @@ export default function AgendaPage() {
   // Form states
   const [textoIA, setTextoIA] = useState('');
   const [interpretando, setInterpretando] = useState(false);
-  const [formAgenda, setFormAgenda] = useState({ plantilla_id: '', titulo: '', fecha_inicio: '' });
+
+  /**
+   * Todo lo que se puede extraer del texto. Antes solo se guardaban el título
+   * y la fecha, así que el barrio, la dirección y los recursos que la IA
+   * reconocía se perdían por el camino.
+   */
+  const FORM_VACIO = {
+    plantilla_id: '',
+    titulo: '',
+    fecha_inicio: '',
+    barrio: '',
+    direccion: '',
+  };
+  const [formAgenda, setFormAgenda] = useState(FORM_VACIO);
+
+  /** Recursos solicitados: «sillas 200», «sonido», «200 refrigerios». */
+  const [recursos, setRecursos] = useState<{ item: string; cantidad: number | null }[]>([]);
+
+  /** Lo que la IA no supo encajar en ningún campo. */
+  const [noReconocido, setNoReconocido] = useState<string[]>([]);
+
+  /** Aviso en pantalla, en lugar de un `alert` que tapa el resultado. */
+  const [aviso, setAviso] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
 
   // Modal Plantilla states
   const [mostrarModalPlantilla, setMostrarModalPlantilla] = useState(false);
   const [nuevaPlantilla, setNuevaPlantilla] = useState({ nombre: '', descripcion: '', icono: '📝', campos: [] as any[] });
 
   // Config states
-  const [config, setConfig] = useState<any>({ PROVEEDOR_IA: 'gemini', OPENAI_API_KEY: '', GEMINI_API_KEY: '' });
+  /** Estado de cada clave: si esta puesta y de donde sale, nunca su valor. */
+  const [configEstado, setConfigEstado] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/agenda/plantillas').then(r => r.json()).then(data => {
-      if(Array.isArray(data)) setPlantillas(data);
+    /**
+     * Las rutas devuelven `{ data: … }`. Se admite también la forma antigua
+     * (el array o el objeto en la raíz) para no romper nada si alguna ruta
+     * todavía no se ha actualizado.
+     */
+    const contenido = (json: any) => json?.data ?? json;
+
+    fetch('/api/agenda/plantillas').then(r => r.json()).then(json => {
+      const lista = contenido(json);
+      if (Array.isArray(lista)) setPlantillas(lista);
     });
-    fetch('/api/agenda').then(r => r.json()).then(data => {
-      if(Array.isArray(data)) setAgendamientos(data);
+    fetch('/api/agenda').then(r => r.json()).then(json => {
+      const lista = contenido(json);
+      if (Array.isArray(lista)) setAgendamientos(lista);
     });
-    fetch('/api/configuracion').then(r => r.json()).then(data => {
-      if(data && !data.error) setConfig(data);
+
+    /**
+     * La configuración ya no devuelve los valores de las claves de API: solo
+     * si están puestas y de dónde salen. Una clave que no sale del servidor
+     * no se puede copiar desde el navegador.
+     */
+    fetch('/api/configuracion').then(r => r.json()).then(json => {
+      const estado = contenido(json);
+      if (Array.isArray(estado)) setConfigEstado(estado);
     });
   }, []);
+
+  /**
+   * Guarda la configuracion.
+   *
+   * Solo viajan los campos que la persona escribio: un campo en blanco
+   * significa «no lo toques», no «borralo». Sin esta distincion, abrir la
+   * pestana y pulsar Guardar borraria todas las claves, porque el servidor ya
+   * no las devuelve para rellenar los inputs.
+   */
+  const guardarConfiguracion = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formulario = e.currentTarget;
+    const fd = new FormData(formulario);
+
+    const cambios: Record<string, string> = {};
+    for (const [clave, valor] of Array.from(fd.entries())) {
+      const texto = String(valor).trim();
+      if (texto !== '') cambios[clave] = texto;
+    }
+
+    if (Object.keys(cambios).length === 0) {
+      setAviso({ tipo: 'error', texto: 'No hay nada que guardar.' });
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/configuracion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cambios),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error ?? 'No se pudo guardar');
+
+      setAviso({ tipo: 'ok', texto: 'Configuracion guardada.' });
+
+      // Se relee el estado: las pistas y el origen cambian tras guardar.
+      const estado = await fetch('/api/configuracion').then(r => r.json());
+      if (Array.isArray(estado?.data)) setConfigEstado(estado.data);
+
+      // Los campos sensibles se vacian: lo guardado ya no se reescribe.
+      formulario.reset();
+    } catch (err: any) {
+      setAviso({ tipo: 'error', texto: err?.message ?? 'No se pudo guardar la configuracion.' });
+    }
+  };
 
   const handleInterpretar = async () => {
     setInterpretando(true);
@@ -40,34 +125,105 @@ export default function AgendaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ texto: textoIA })
       });
-      const data = await res.json();
-      
-      if (data.error) throw new Error(data.error);
+      const json = await res.json();
+
+      if (!res.ok || json.error) throw new Error(json.error ?? 'No se pudo interpretar');
+
+      // La respuesta viene dentro de `data`, junto a lo que no se reconoció.
+      const extraido = json.data ?? {};
+
+      /**
+       * La fecha y la hora llegan por separado. Se combinan para el campo
+       * `datetime-local`; si falta la hora, el campo queda vacío en vez de
+       * inventarse la hora actual, que es lo que pasaba antes y hacía parecer
+       * que la IA había entendido algo que no dijo nadie.
+       */
+      const fechaHora =
+        extraido.fecha && extraido.hora
+          ? `${extraido.fecha}T${extraido.hora}`
+          : extraido.fecha
+            ? `${extraido.fecha}T00:00`
+            : '';
 
       setFormAgenda(prev => ({
         ...prev,
-        titulo: data.titulo || 'Reunión autogenerada por IA',
-        fecha_inicio: data.fecha ? data.fecha.slice(0, 16) : new Date().toISOString().slice(0, 16)
+        // El servidor ya resolvio el nombre de plantilla a un id real; si no
+        // caso con ninguna, llega vacio y lo elige la persona.
+        plantilla_id: extraido.plantilla_id || prev.plantilla_id,
+        titulo: extraido.titulo || '',
+        fecha_inicio: fechaHora,
+        barrio: extraido.barrio || '',
+        direccion: extraido.direccion || '',
       }));
-      
-      alert("La IA extrajo exitosamente los datos de tu texto.");
+
+      setRecursos(Array.isArray(extraido.recursos) ? extraido.recursos : []);
+      setNoReconocido(Array.isArray(extraido.no_reconocido) ? extraido.no_reconocido : []);
+
+      // Se dice qué faltó, para que se vea sin tener que buscarlo.
+      const faltan = [
+        !extraido.fecha && 'la fecha',
+        !extraido.hora && 'la hora',
+        !extraido.barrio && 'el barrio',
+        !extraido.direccion && 'la dirección',
+      ].filter(Boolean);
+
+      setAviso({
+        tipo: 'ok',
+        texto: faltan.length
+          ? `Revisa lo que entendí. Falta por completar: ${faltan.join(', ')}.`
+          : 'Revisa lo que entendí antes de guardar.',
+      });
     } catch(e: any) {
-      alert("Error al interpretar: " + e.message);
+      setAviso({ tipo: 'error', texto: e.message });
     } finally {
       setInterpretando(false);
     }
   };
 
-  const agendar = (e: React.FormEvent) => {
+  const agendar = async (e: React.FormEvent) => {
     e.preventDefault();
-    fetch('/api/agenda', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...formAgenda, estado: 'cupo' })
-    }).then(() => {
-      alert("Agendamiento creado como CUPO");
-      window.location.reload();
-    });
+    setAviso(null);
+
+    try {
+      const res = await fetch('/api/agenda', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formAgenda,
+          // El servidor decide el estado final; aqui solo se pide cupo.
+          estado: 'cupo',
+          texto_original: textoIA || undefined,
+          recursos_solicitados: recursos.map(r => ({
+            item: r.item,
+            cantidad_solicitada: r.cantidad,
+          })),
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        // El servidor dice que falta; se muestra en vez de recargar a ciegas.
+        const detalle = json?.details?.fieldErrors
+          ? Object.entries(json.details.fieldErrors)
+              .map(([campo, errores]: any) => `${campo}: ${errores.join(', ')}`)
+              .join(' · ')
+          : json?.error;
+        throw new Error(detalle ?? 'No se pudo guardar');
+      }
+
+      setAviso({ tipo: 'ok', texto: 'Guardado como cupo. Aun no es una reunion confirmada.' });
+      setFormAgenda(FORM_VACIO);
+      setRecursos([]);
+      setNoReconocido([]);
+      setTextoIA('');
+
+      // Se refresca la lista sin recargar la pagina entera.
+      const lista = await fetch('/api/agenda').then(r => r.json());
+      setAgendamientos(lista?.data ?? lista ?? []);
+    } catch (err: any) {
+      setAviso({ tipo: 'error', texto: err.message });
+    }
   };
 
   const guardarPlantilla = async (e: React.FormEvent) => {
@@ -170,6 +326,22 @@ export default function AgendaPage() {
           <List className="w-5 h-5 text-indigo-600" />
           Datos Estructurados
         </h2>
+
+        {/* El resultado se ve aquí, no en una ventana que hay que cerrar para
+            poder mirarlo. */}
+        {aviso && (
+          <div
+            role="status"
+            className={`mb-4 rounded-lg p-3 text-sm ${
+              aviso.tipo === 'ok'
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                : 'bg-red-50 border border-red-200 text-red-700'
+            }`}
+          >
+            {aviso.texto}
+          </div>
+        )}
+
         <form onSubmit={agendar} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Plantilla Aplicada</label>
@@ -195,22 +367,133 @@ export default function AgendaPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Fecha de Inicio</label>
-              <input 
+              <label className="block text-sm font-medium text-slate-700 mb-1">Fecha y hora</label>
+              <input
                 required
-                type="datetime-local" 
+                type="datetime-local"
                 className="w-full border border-slate-300 rounded-lg p-3"
                 value={formAgenda.fecha_inicio}
                 onChange={e => setFormAgenda({...formAgenda, fecha_inicio: e.target.value})}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Lugar / Barrio</label>
-              <input type="text" className="w-full border border-slate-300 rounded-lg p-3" placeholder="Por confirmar..." />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Barrio</label>
+              <input
+                type="text"
+                className="w-full border border-slate-300 rounded-lg p-3"
+                placeholder="Sin barrio"
+                value={formAgenda.barrio}
+                onChange={e => setFormAgenda({...formAgenda, barrio: e.target.value})}
+              />
             </div>
           </div>
+
+          {/* La dirección es un dato distinto del barrio: sin ella nadie
+              encuentra el sitio, aunque sepa en qué barrio es. */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Dirección exacta</label>
+            <input
+              type="text"
+              className="w-full border border-slate-300 rounded-lg p-3"
+              placeholder="Ej: carrera 12 # 11-18"
+              value={formAgenda.direccion}
+              onChange={e => setFormAgenda({...formAgenda, direccion: e.target.value})}
+            />
+          </div>
+
+          {/* Lo que hay que conseguir. Antes la IA lo reconocía y se perdía
+              por el camino, porque no había dónde mostrarlo. */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-slate-700">
+                Recursos solicitados
+                {recursos.length > 0 && (
+                  <span className="ml-2 text-xs text-slate-500">({recursos.length})</span>
+                )}
+              </label>
+              <button
+                type="button"
+                onClick={() => setRecursos([...recursos, { item: '', cantidad: null }])}
+                className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+              >
+                + Añadir
+              </button>
+            </div>
+
+            {recursos.length === 0 ? (
+              <p className="text-sm text-slate-400 border border-dashed border-slate-200 rounded-lg p-3">
+                Ninguno. Escribe «sillas 200, sonido» y la IA los reconoce.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {recursos.map((r, i) => (
+                  <div key={i} className="flex gap-2">
+                    <input
+                      type="text"
+                      className="flex-1 border border-slate-300 rounded-lg p-2 text-sm"
+                      placeholder="Qué hace falta"
+                      value={r.item}
+                      onChange={e => {
+                        const copia = [...recursos];
+                        copia[i] = { ...copia[i], item: e.target.value };
+                        setRecursos(copia);
+                      }}
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      className="w-28 border border-slate-300 rounded-lg p-2 text-sm"
+                      placeholder="cantidad"
+                      value={r.cantidad ?? ''}
+                      onChange={e => {
+                        const copia = [...recursos];
+                        copia[i] = {
+                          ...copia[i],
+                          cantidad: e.target.value === '' ? null : Number(e.target.value),
+                        };
+                        setRecursos(copia);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setRecursos(recursos.filter((_, j) => j !== i))}
+                      className="px-2 text-slate-400 hover:text-red-600"
+                      aria-label="Quitar recurso"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Lo que la IA no supo encajar. Se enseña en vez de descartarlo en
+              silencio: puede ser justo el dato que importaba. */}
+          {noReconocido.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-sm font-medium text-amber-900">No supe dónde poner esto:</p>
+              <ul className="mt-1 space-y-0.5">
+                {noReconocido.map((t, i) => (
+                  <li key={i} className="text-sm text-amber-800">· {t}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="pt-4 mt-4 border-t border-slate-100 flex justify-end gap-3">
-            <button type="button" className="px-5 py-2.5 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">Descartar</button>
+            <button
+              type="button"
+              onClick={() => {
+                setFormAgenda(FORM_VACIO);
+                setRecursos([]);
+                setNoReconocido([]);
+                setAviso(null);
+              }}
+              className="px-5 py-2.5 text-slate-600 font-medium hover:bg-slate-100 rounded-lg"
+            >
+              Descartar
+            </button>
             <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 shadow-sm">
               <Save className="w-5 h-5" />
               Guardar como Cupo
@@ -306,47 +589,69 @@ export default function AgendaPage() {
         {activeTab === 'plantillas' && renderPlantillas()}
         {activeTab === 'config' && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-3xl mx-auto">
-            <div className="flex items-center gap-2 mb-6">
+            <div className="flex items-center gap-2 mb-2">
               <Settings className="w-6 h-6 text-indigo-600" />
               <h2 className="text-xl font-bold">Configuración de Inteligencia Artificial</h2>
             </div>
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              const fd = new FormData(e.currentTarget);
-              await fetch('/api/configuracion', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  PROVEEDOR_IA: fd.get('proveedor'),
-                  OPENAI_API_KEY: fd.get('openai_key'),
-                  GEMINI_API_KEY: fd.get('gemini_key')
-                })
-              });
-              alert('Configuración guardada correctamente.');
-            }} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Proveedor de IA Principal</label>
-                <select name="proveedor" className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50" value={config.PROVEEDOR_IA || 'gemini'} onChange={e => setConfig({...config, PROVEEDOR_IA: e.target.value})}>
-                  <option value="gemini">Google Gemini (Recomendado)</option>
-                  <option value="openai">OpenAI ChatGPT</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Clave de API de OpenAI (ChatGPT)</label>
-                <input name="openai_key" type="password" placeholder="sk-..." className="w-full border border-slate-300 rounded-lg p-3" value={config.OPENAI_API_KEY || ''} onChange={e => setConfig({...config, OPENAI_API_KEY: e.target.value})} />
-                <p className="text-xs text-slate-500 mt-1">Solo necesaria si seleccionaste OpenAI. Puedes dejarla en blanco para usar la variable de entorno .env</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Clave de API de Google Gemini</label>
-                <input name="gemini_key" type="password" placeholder="AIzaSy..." className="w-full border border-slate-300 rounded-lg p-3" value={config.GEMINI_API_KEY || ''} onChange={e => setConfig({...config, GEMINI_API_KEY: e.target.value})} />
-                <p className="text-xs text-slate-500 mt-1">Solo necesaria si seleccionaste Gemini. Puedes dejarla en blanco para usar la variable de entorno .env</p>
-              </div>
-              <div className="pt-4 mt-4 border-t border-slate-100 flex justify-end">
-                <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 shadow-sm">
-                  <Save className="w-5 h-5" /> Guardar Configuración
-                </button>
-              </div>
-            </form>
+            <p className="text-sm text-slate-500 mb-6">
+              Las claves de API no se muestran: el servidor solo informa si están puestas, de
+              dónde salen y sus últimos cuatro caracteres. Deja un campo en blanco para no
+              tocarlo.
+            </p>
+
+            {configEstado.length === 0 ? (
+              <p className="text-sm text-slate-500 bg-slate-50 p-4 rounded-lg text-center border border-dashed border-slate-200">
+                No se pudo leer la configuración. Necesitas el permiso «configuracion.gestionar».
+              </p>
+            ) : (
+              <form onSubmit={guardarConfiguracion} className="space-y-5">
+                {configEstado.map((c: any) => (
+                  <div key={c.clave}>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-sm font-medium text-slate-700">{c.etiqueta}</label>
+                      {c.configurada ? (
+                        <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                          Configurada{c.pista ? ` (${c.pista})` : ''} · {c.origen}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                          Sin configurar
+                        </span>
+                      )}
+                    </div>
+
+                    {Array.isArray(c.opciones) && c.opciones.length > 0 ? (
+                      <select
+                        name={c.clave}
+                        defaultValue={c.valor ?? c.opciones[0]}
+                        className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50"
+                      >
+                        {c.opciones.map((o: string) => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        name={c.clave}
+                        type={c.sensible ? 'password' : 'text'}
+                        autoComplete="off"
+                        defaultValue={c.sensible ? '' : (c.valor ?? '')}
+                        placeholder={c.sensible && c.configurada ? 'Sin cambios' : ''}
+                        className="w-full border border-slate-300 rounded-lg p-3"
+                      />
+                    )}
+
+                    {c.ayuda && <p className="text-xs text-slate-500 mt-1">{c.ayuda}</p>}
+                  </div>
+                ))}
+
+                <div className="pt-4 mt-4 border-t border-slate-100 flex justify-end">
+                  <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 shadow-sm">
+                    <Save className="w-5 h-5" /> Guardar Configuración
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         )}
       </div>

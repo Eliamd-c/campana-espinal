@@ -12,7 +12,9 @@ import {
   envolverNoConfiable,
   AVISO_CONTENIDO_EXTERNO,
   pareceInyeccion,
+  elegirDeListaCerrada,
 } from "@/lib/ia/sanitizar";
+import prisma from "@/lib/db";
 
 /**
  * Convierte un texto escrito a mano en los datos de un agendamiento.
@@ -38,6 +40,8 @@ const EntradaSchema = z.object({
  * aun así no se le pasa al navegador lo que sea que haya contestado.
  */
 const SalidaSchema = z.object({
+  /** Nombre de una plantilla existente. Se resuelve a un id despues. */
+  plantilla: z.string().max(120).default(""),
   titulo: z.string().max(200).default(""),
   fecha: z.string().max(40).default(""),
   hora: z.string().max(10).default(""),
@@ -55,7 +59,7 @@ const SalidaSchema = z.object({
   no_reconocido: z.array(z.string().max(200)).max(20).default([]),
 });
 
-function construirPrompt(texto: string): string {
+function construirPrompt(texto: string, plantillas: string[]): string {
   const hoy = new Date().toISOString().slice(0, 10);
 
   return `Eres un asistente que convierte solicitudes de agendamiento en datos estructurados para una campaña política en El Espinal, Tolima (Colombia).
@@ -64,6 +68,7 @@ Hoy es ${hoy}. Si el texto no indica año, usa el más próximo en el futuro.
 
 Devuelve SOLO un objeto JSON, sin markdown ni explicaciones, con esta forma:
 {
+  "plantilla": "el nombre EXACTO de una de estas plantillas, o cadena vacía: ${plantillas.join(" | ") || "(no hay ninguna)"}",
   "titulo": "de qué es la reunión o el evento",
   "fecha": "YYYY-MM-DD, o cadena vacía si no se menciona",
   "hora": "HH:mm en 24 horas, o cadena vacía si no se menciona",
@@ -79,6 +84,12 @@ Reglas:
 - Barrio y dirección son cosas distintas: "barrio Caballero y Góngora,
   carrera 12 # 11-18" son dos datos, no uno.
 - En recursos, "cantidad" es null cuando no se indica número.
+- Enumera TODOS los recursos que se piden, uno por uno, aunque vayan seguidos
+  sin comas: "tarima decoracion sonido sillas 200" son cuatro recursos. No
+  resumas ni agrupes: lo que se omita aquí es material que nadie llevará.
+- "plantilla" solo puede ser uno de los nombres de la lista, copiado tal cual.
+  Si ninguno encaja con claridad, devuelve cadena vacía: que la persona la
+  elija es mejor que aplicarle las reglas equivocadas.
 
 Solicitud recibida:
 
@@ -116,7 +127,19 @@ export async function POST(req: NextRequest) {
     }
 
     const proveedor = (await obtenerConfig("PROVEEDOR_IA")) ?? "gemini";
-    const prompt = construirPrompt(texto);
+
+    /**
+     * Las plantillas activas se le ofrecen al modelo como lista cerrada. Sin
+     * esto, la interfaz prometía «deja que la IA asigne» y siempre devolvía el
+     * selector vacío, aunque la plantilla es obligatoria para guardar.
+     */
+    const plantillas = await prisma.plantillaAgenda.findMany({
+      where: { activa: true },
+      select: { id: true, nombre: true },
+      orderBy: { nombre: "asc" },
+    });
+
+    const prompt = construirPrompt(texto, plantillas.map((p) => p.nombre));
 
     let respuestaCruda: string;
 
@@ -137,6 +160,10 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
+          // Sin esto, el mismo texto daba listas de recursos distintas en
+          // cada intento: una vez cinco, la siguiente dos. Un recurso que se
+          // pierde en silencio es una tarima que nadie lleva.
+          temperature: 0,
           response_format: { type: "json_object" },
           messages: [{ role: "user", content: prompt }],
         }),
@@ -167,7 +194,8 @@ export async function POST(req: NextRequest) {
       const genAI = new GoogleGenerativeAI(clave);
       const model = genAI.getGenerativeModel({
         model: "gemini-2.5-flash",
-        generationConfig: { responseMimeType: "application/json" },
+        // Ver el comentario de `temperature` en la rama de OpenAI.
+        generationConfig: { responseMimeType: "application/json", temperature: 0 },
       });
 
       const resultado = await model.generateContent(prompt);
@@ -198,13 +226,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    /**
+     * El nombre que devuelve el modelo se resuelve contra la lista real. Lo
+     * que no case con exactamente una plantilla se descarta: el selector se
+     * queda vacío y lo elige la persona.
+     */
+    const nombres = plantillas.map((p) => p.nombre);
+    const elegida = elegirDeListaCerrada(validada.data.plantilla, nombres);
+    const plantilla_id = elegida
+      ? (plantillas.find((p) => p.nombre === elegida)?.id ?? "")
+      : "";
+
     logger.info("[agenda] Texto interpretado", {
       proveedor,
       recursos: validada.data.recursos.length,
     });
 
     return NextResponse.json({
-      data: validada.data,
+      data: { ...validada.data, plantilla_id },
       // Lo que la persona escribió, para guardarlo junto al agendamiento y
       // poder comparar después con lo que se entendió.
       texto_original: texto,
