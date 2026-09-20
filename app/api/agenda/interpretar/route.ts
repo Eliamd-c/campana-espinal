@@ -4,20 +4,25 @@ import { exigirPermiso } from '@/lib/auth/permisos-ruta';
 export const dynamic = 'force-dynamic';
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import prisma from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
     const auth = await exigirPermiso('agenda.editar' as any);
     if (!auth.ok) return auth.respuesta;
     
-    const body = await request.json(); // { texto: string, plantillas_disponibles: any[] }
+    const body = await request.json();
     
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'Falta GEMINI_API_KEY' }, { status: 500 });
-    }
+    // Obtener configuraciones de la base de datos
+    const configs = await prisma.configuracionGlobal.findMany();
+    const configMap = configs.reduce((acc: any, curr) => {
+      acc[curr.clave] = curr.valor;
+      return acc;
+    }, {});
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const proveedorIA = configMap['PROVEEDOR_IA'] || 'gemini'; // 'gemini' o 'openai'
+    const geminiKey = configMap['GEMINI_API_KEY'] || process.env.GEMINI_API_KEY;
+    const openaiKey = configMap['OPENAI_API_KEY'] || process.env.OPENAI_API_KEY;
 
     const prompt = `
       Analiza el siguiente texto escrito por un usuario para agendar un evento o reunión.
@@ -33,10 +38,37 @@ export async function POST(request: Request) {
       Texto del usuario: "${body.texto}"
     `;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text().trim().replace(/^```json/g, '').replace(/```$/g, '');
-    
-    const parsedData = JSON.parse(responseText);
+    let parsedData = null;
+
+    if (proveedorIA === 'openai') {
+      if (!openaiKey) return NextResponse.json({ error: 'Falta OPENAI_API_KEY' }, { status: 500 });
+      
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+      
+      const data = await response.json();
+      if (!data.choices || !data.choices[0]) throw new Error('Error en OpenAI API');
+      const responseText = data.choices[0].message.content.trim().replace(/^```json/g, '').replace(/```$/g, '');
+      parsedData = JSON.parse(responseText);
+      
+    } else {
+      if (!geminiKey) return NextResponse.json({ error: 'Falta GEMINI_API_KEY' }, { status: 500 });
+      
+      const genAI = new GoogleGenerativeAI(geminiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const result = await model.generateContent(prompt);
+      const responseText = result.response.text().trim().replace(/^```json/g, '').replace(/```$/g, '');
+      parsedData = JSON.parse(responseText);
+    }
 
     return NextResponse.json(parsedData);
   } catch (error: any) {

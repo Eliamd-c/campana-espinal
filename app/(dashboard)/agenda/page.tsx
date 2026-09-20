@@ -6,7 +6,7 @@ import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, Chevr
 export default function AgendaPage() {
   const [plantillas, setPlantillas] = useState<any[]>([]);
   const [agendamientos, setAgendamientos] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'calendario' | 'agendar' | 'plantillas'>('calendario');
+  const [activeTab, setActiveTab] = useState<'calendario' | 'agendar' | 'plantillas' | 'config'>('calendario');
 
   // Form states
   const [textoIA, setTextoIA] = useState('');
@@ -285,6 +285,12 @@ export default function AgendaPage() {
           >
             Plantillas
           </button>
+          <button 
+            onClick={() => setActiveTab('config')}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'config' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            Configuración IA
+          </button>
         </div>
       </div>
 
@@ -292,6 +298,51 @@ export default function AgendaPage() {
         {activeTab === 'calendario' && renderCalendario()}
         {activeTab === 'agendar' && renderAgendar()}
         {activeTab === 'plantillas' && renderPlantillas()}
+        {activeTab === 'config' && (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-3xl mx-auto">
+            <div className="flex items-center gap-2 mb-6">
+              <Settings className="w-6 h-6 text-indigo-600" />
+              <h2 className="text-xl font-bold">Configuración de Inteligencia Artificial</h2>
+            </div>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              await fetch('/api/configuracion', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  PROVEEDOR_IA: fd.get('proveedor'),
+                  OPENAI_API_KEY: fd.get('openai_key'),
+                  GEMINI_API_KEY: fd.get('gemini_key')
+                })
+              });
+              alert('Configuración guardada correctamente.');
+            }} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Proveedor de IA Principal</label>
+                <select name="proveedor" className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50">
+                  <option value="gemini">Google Gemini (Recomendado)</option>
+                  <option value="openai">OpenAI ChatGPT</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Clave de API de OpenAI (ChatGPT)</label>
+                <input name="openai_key" type="password" placeholder="sk-..." className="w-full border border-slate-300 rounded-lg p-3" />
+                <p className="text-xs text-slate-500 mt-1">Solo necesaria si seleccionaste OpenAI. Puedes dejarla en blanco para usar la variable de entorno .env</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Clave de API de Google Gemini</label>
+                <input name="gemini_key" type="password" placeholder="AIzaSy..." className="w-full border border-slate-300 rounded-lg p-3" />
+                <p className="text-xs text-slate-500 mt-1">Solo necesaria si seleccionaste Gemini. Puedes dejarla en blanco para usar la variable de entorno .env</p>
+              </div>
+              <div className="pt-4 mt-4 border-t border-slate-100 flex justify-end">
+                <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 shadow-sm">
+                  <Save className="w-5 h-5" /> Guardar Configuración
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
 
       {mostrarModalPlantilla && (

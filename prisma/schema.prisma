@@ -536,3 +536,15 @@ model RecursoSolicitado {
   @@index([agendamiento_id])
   @@map("recursos_solicitados")
 }
+
+// ==========================================
+// Módulo de Configuración Global
+// ==========================================
+
+model ConfiguracionGlobal {
+  clave       String   @id @db.VarChar(100)
+  valor       String   @db.Text
+  actualizado DateTime @updatedAt
+
+  @@map("configuracion_global")
+}
