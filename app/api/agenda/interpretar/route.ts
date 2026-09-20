@@ -56,9 +56,14 @@ export async function POST(request: Request) {
       });
       
       const data = await response.json();
-      if (!data.choices || !data.choices[0]) throw new Error('Error en OpenAI API');
-      const responseText = data.choices[0].message.content.trim().replace(/^```json/g, '').replace(/```$/g, '');
-      parsedData = JSON.parse(responseText);
+      if (data.error) throw new Error(`OpenAI API: ${data.error.message}`);
+      if (!data.choices || !data.choices[0]) throw new Error('Estructura inesperada de OpenAI API');
+      const responseText = data.choices[0].message.content.trim().replace(/^```(?:json)?\n?/g, '').replace(/```$/g, '');
+      try {
+        parsedData = JSON.parse(responseText);
+      } catch (parseError) {
+        throw new Error('La IA no devolvió un JSON válido: ' + responseText);
+      }
       
     } else {
       if (!geminiKey) return NextResponse.json({ error: 'Falta GEMINI_API_KEY' }, { status: 500 });
@@ -66,13 +71,17 @@ export async function POST(request: Request) {
       const genAI = new GoogleGenerativeAI(geminiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const result = await model.generateContent(prompt);
-      const responseText = result.response.text().trim().replace(/^```json/g, '').replace(/```$/g, '');
-      parsedData = JSON.parse(responseText);
+      const responseText = result.response.text().trim().replace(/^```(?:json)?\n?/g, '').replace(/```$/g, '');
+      try {
+        parsedData = JSON.parse(responseText);
+      } catch (parseError) {
+        throw new Error('La IA no devolvió un JSON válido: ' + responseText);
+      }
     }
 
     return NextResponse.json(parsedData);
   } catch (error: any) {
     console.error("Error AI:", error);
-    return NextResponse.json({ error: 'Error del servidor o de IA' }, { status: 500 });
+    return NextResponse.json({ error: `Error interno de IA: ${error.message || 'Desconocido'}` }, { status: 500 });
   }
 }
