@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     const agendamiento = await prisma.agendamiento.create({
       data: {
         plantilla_id: body.plantilla_id,
-        reglas_congeladas: plantilla.campos,
+        reglas_congeladas: plantilla.campos ? JSON.parse(JSON.stringify(plantilla.campos)) : [],
         titulo: body.titulo,
         fecha_inicio: new Date(body.fecha_inicio),
         fecha_fin: body.fecha_fin ? new Date(body.fecha_fin) : undefined,
