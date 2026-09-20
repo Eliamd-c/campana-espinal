@@ -11,12 +11,10 @@ const navigation = [
   { name: "Contactos", href: "/contactos", icon: "👥" },
   { name: "Agenda", href: "/agenda", icon: "📅" },
   { name: "Líderes", href: "/lideres", icon: "⭐" },
-  { name: "Líneas WA", href: "/lineas", icon: "📱" },
   { name: "Mensajes", href: "/mensajes", icon: "💬" },
   { name: "Mesas", href: "/mesas", icon: "🗳️" },
   { name: "Enlaces", href: "/enlaces", icon: "🔗" },
   { name: "Inteligencia IA", href: "/ia", icon: "✨" },
-  { name: "Bot WhatsApp", href: "/whatsapp", icon: "🤖" },
   { name: "Documentación", href: "/docs", icon: "📖" },
   { name: "Mi cuenta", href: "/cuenta", icon: "🔐" },
 ];

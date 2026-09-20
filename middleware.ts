@@ -28,19 +28,16 @@ const RUTAS_PUBLICAS = [
 ];
 
 /**
- * Webhooks entrantes de proveedores externos: no pueden traer sesión de
- * usuario, así que se autentican por secreto compartido dentro de cada
- * handler (hallazgo #5 del backlog). Se listan uno a uno: un prefijo abierto
- * convertiría en pública cualquier ruta futura que alguien cuelgue debajo.
+ * Webhooks entrantes.
+ *
+ * Vacío a propósito: al retirar la integración de Evolution API no queda
+ * ningún proveedor externo que llame a esta aplicación. Cuando se conecte
+ * otro, su ruta se añade aquí Y se autentica dentro del handler con
+ * `lib/webhooks/verificar.ts`, que sigue disponible: una ruta pública sin
+ * secreto compartido es una puerta abierta.
  */
-const WEBHOOKS = [
-  "/api/whatsapp/webhook",
-  // La llama el webhook de Evolution servidor-a-servidor; se autentica con
-  // INTERNAL_WEBHOOK_SECRET dentro del handler.
-  "/api/whatsapp/procesar-mensaje",
-  "/api/evolution/webhook",
-  "/api/webhooks/evolution",
-];
+const WEBHOOKS: string[] = [];
+
 
 /**
  * Coincidencia exacta o de subruta. Nunca `startsWith` a secas: eso haría

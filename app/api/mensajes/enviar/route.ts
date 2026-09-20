@@ -25,7 +25,18 @@ export async function POST(req: NextRequest) {
 
     const { cedulas, texto, nombre_campana, mediaUrl, pollOptions, lineaId, manuales, variaciones, excluirYaContactados, modoCalentamiento } = parsed.data;
 
-    // 3. Verificar que hay al menos una línea conectada
+    /**
+     * 3. Verificar que hay por dónde enviar.
+     *
+     * Ahora mismo no hay ninguno: la integración con Evolution API se retiró
+     * y aún no se ha conectado su sustituto. El modelo de campañas,
+     * plantillas e historial se conserva intacto para que el próximo
+     * proveedor se enchufe aquí sin rehacer nada.
+     *
+     * Se responde con un mensaje que dice lo que pasa de verdad, en vez de
+     * «no hay líneas conectadas», que haría pensar en un problema de
+     * conexión y llevaría a buscar donde no es.
+     */
     const lineasActivas = await prisma.lineaWhatsapp.findMany({
       where: {
         estado: "conectado",
@@ -35,8 +46,13 @@ export async function POST(req: NextRequest) {
 
     if (lineasActivas.length === 0) {
       return NextResponse.json(
-        { error: lineaId ? "La línea seleccionada no está conectada" : "No hay líneas de WhatsApp conectadas" },
-        { status: 400 }
+        {
+          error:
+            "No hay ningún proveedor de mensajería conectado. La integración " +
+            "anterior se retiró y todavía no se ha configurado la nueva.",
+          codigo: "SIN_PROVEEDOR",
+        },
+        { status: 503 }
       );
     }
 

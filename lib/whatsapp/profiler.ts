@@ -1,3 +1,11 @@
+/**
+ * NOTA: ahora mismo no lo llama nadie. Lo invocaba el webhook de entrada de
+ * WhatsApp, que se retiro junto con la integracion de Evolution API. Se
+ * conserva porque la logica -- clasificar la intencion de voto a partir de
+ * un mensaje y guardarla en la ficha -- sirve igual con el proveedor que
+ * venga. Al reconectarlo, ojo: el texto que recibe lo escribe un tercero,
+ * asi que debe seguir pasando por lib/ia/sanitizar.ts como hasta ahora.
+ */
 import prisma from "@/lib/db";
 import { generarAnalisis, promptClasificarIntencionVoto } from "@/lib/gemini";
 import { elegirDeListaCerrada, pareceInyeccion } from "@/lib/ia/sanitizar";
