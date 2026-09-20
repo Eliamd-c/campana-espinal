@@ -18,6 +18,7 @@ const navigation = [
   { name: "Inteligencia IA", href: "/ia", icon: "✨" },
   { name: "Bot WhatsApp", href: "/whatsapp", icon: "🤖" },
   { name: "Documentación", href: "/docs", icon: "📖" },
+  { name: "Mi cuenta", href: "/cuenta", icon: "🔐" },
 ];
 
 interface DashboardSidebarProps {
