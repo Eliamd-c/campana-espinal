@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   try {
     // ✅ Rate Limiting
     const ip = req.ip || "unknown";
-    const { success, remaining } = await checkRateLimit(rateLimiters.scan, ip);
+    const { success, remaining } = await checkRateLimit(rateLimiters.scan, ip, "scan");
     if (!success) {
       return NextResponse.json(
         { error: "Demasiadas solicitudes de escaneo" },

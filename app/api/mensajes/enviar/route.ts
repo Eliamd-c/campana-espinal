@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   try {
     // 1. Rate limiting
     const ip = req.ip || req.headers.get("x-forwarded-for") || "unknown";
-    const { success } = await checkRateLimit(rateLimiters.sendMessage, ip);
+    const { success } = await checkRateLimit(rateLimiters.sendMessage, ip, "sendMessage");
     if (!success) {
       return NextResponse.json({ error: "Demasiadas solicitudes de envío" }, { status: 429 });
     }

@@ -1,5 +1,6 @@
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { consultarLimite, LIMITES } from "@/lib/rate-limit-edge";
 
 const isUpstashConfigured = 
   process.env.REDIS_URL && 
@@ -41,6 +42,18 @@ if (isUpstashConfigured) {
 export const redis = redisInstance;
 
 // Rate limiters por endpoint (solo instanciados si Upstash está configurado)
+/**
+ * Cubo local equivalente al de cada limitador, para cuando Upstash no esta
+ * configurado. Sin esto, `checkRateLimit` devolvia siempre "permitido" y los
+ * bloques `if (!success) return 429` de las rutas nunca se ejecutaban: el
+ * codigo aparentaba una proteccion que no existia.
+ */
+const CUBO_LOCAL = {
+  scan: "ia",
+  sendMessage: "envio",
+  api: "datos",
+} as const;
+
 export const rateLimiters = {
   scan: isUpstashConfigured ? new Ratelimit({
     redis,
@@ -66,10 +79,20 @@ export const rateLimiters = {
 
 export async function checkRateLimit(
   limiter: any,
-  key: string
+  key: string,
+  cubo: keyof typeof CUBO_LOCAL = "api"
 ): Promise<{ success: boolean; remaining: number; reset: number }> {
+  // Sin Upstash se cuenta en memoria del proceso, igual que hace el
+  // middleware. Es una segunda barrera por si alguna ruta se llama desde
+  // dentro sin pasar por el.
   if (!isUpstashConfigured || !limiter) {
-    return { success: true, remaining: 999, reset: Date.now() + 60000 };
+    const limite = LIMITES[CUBO_LOCAL[cubo]];
+    const r = consultarLimite(`ruta:${cubo}:${key}`, limite);
+    return {
+      success: r.permitido,
+      remaining: r.restantes,
+      reset: Date.now() + r.reintentarEn * 1000,
+    };
   }
   try {
     const result = await limiter.limit(key);
@@ -79,8 +102,16 @@ export async function checkRateLimit(
       reset: result.reset,
     };
   } catch (err) {
-    console.error("Rate limit error (falling back to allow):", err);
-    return { success: true, remaining: 999, reset: Date.now() + 60000 };
+    // Si el limitador remoto falla se sigue contando en local, en vez de
+    // dejar pasar todo: un fallo de Redis no puede abrir la puerta.
+    console.error("Rate limit remoto no disponible; se cuenta en memoria:", err);
+    const limite = LIMITES[CUBO_LOCAL[cubo]];
+    const r = consultarLimite(`ruta:${cubo}:${key}`, limite);
+    return {
+      success: r.permitido,
+      remaining: r.restantes,
+      reset: Date.now() + r.reintentarEn * 1000,
+    };
   }
 }
 

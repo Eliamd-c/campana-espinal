@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   try {
     // 1. Rate limiting
     const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
-    const { success } = await checkRateLimit(rateLimiters.api, ip);
+    const { success } = await checkRateLimit(rateLimiters.api, ip, "api");
     if (!success) {
       return NextResponse.json(
         { error: "Demasiadas solicitudes en poco tiempo. Intente de nuevo más tarde." },
