@@ -47,6 +47,8 @@ const SalidaSchema = z.object({
   hora: z.string().max(10).default(""),
   barrio: z.string().max(80).default(""),
   direccion: z.string().max(200).default(""),
+  responsable: z.string().max(80).default(""),
+  telefono_responsable: z.string().max(40).default(""),
   recursos: z
     .array(
       z.object({
@@ -74,6 +76,8 @@ Devuelve SOLO un objeto JSON, sin markdown ni explicaciones, con esta forma:
   "hora": "HH:mm en 24 horas, o cadena vacía si no se menciona",
   "barrio": "solo el nombre del barrio, o cadena vacía",
   "direccion": "la dirección exacta (carrera, calle, número), o cadena vacía",
+  "responsable": "nombre de quien responde por la reunión, o cadena vacía",
+  "telefono_responsable": "su teléfono, solo dígitos, o cadena vacía",
   "recursos": [{"item": "sillas", "cantidad": 200}, {"item": "sonido", "cantidad": null}],
   "no_reconocido": ["fragmentos que no encajan en ningún campo"]
 }
@@ -81,9 +85,16 @@ Devuelve SOLO un objeto JSON, sin markdown ni explicaciones, con esta forma:
 Reglas:
 - Un campo que no aparezca en el texto va como cadena vacía. NO lo inventes:
   es mejor un hueco que la persona rellena que un dato falso que se cuela.
+- El título describe DE QUÉ es el evento, no de qué tipo es. "reunión" a secas
+  no sirve: si el texto dice "reunión donde Cervera", el título es "Reunión
+  donde Cervera". Solo si no hay nada que lo distinga vale el tipo a secas.
 - Barrio y dirección son cosas distintas: "barrio Caballero y Góngora,
   carrera 12 # 11-18" son dos datos, no uno.
-- En recursos, "cantidad" es null cuando no se indica número.
+- En recursos, "cantidad" es null cuando no se indica número. El número puede
+  ir ANTES o DESPUÉS del recurso: en "200 sillas 200 refrigerios" son dos
+  recursos de 200 cada uno, no uno con cantidad y otro sin ella. Lee cada
+  número pegado a su recurso, vaya delante o detrás. Un recurso puede ser de
+  varias palabras ("regalos para rifas" es uno solo): no lo partas.
 - Enumera TODOS los recursos que se piden, uno por uno, aunque vayan seguidos
   sin comas: "tarima decoracion sonido sillas 200" son cuatro recursos. No
   resumas ni agrupes: lo que se omita aquí es material que nadie llevará.

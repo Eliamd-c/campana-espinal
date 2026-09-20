@@ -23,6 +23,8 @@ export default function AgendaPage() {
     fecha_inicio: '',
     barrio: '',
     direccion: '',
+    responsable: '',
+    telefono_responsable: '',
   };
   const [formAgenda, setFormAgenda] = useState(FORM_VACIO);
 
@@ -154,6 +156,8 @@ export default function AgendaPage() {
         fecha_inicio: fechaHora,
         barrio: extraido.barrio || '',
         direccion: extraido.direccion || '',
+        responsable: extraido.responsable || '',
+        telefono_responsable: extraido.telefono_responsable || '',
       }));
 
       setRecursos(Array.isArray(extraido.recursos) ? extraido.recursos : []);
@@ -184,12 +188,20 @@ export default function AgendaPage() {
     e.preventDefault();
     setAviso(null);
 
+    const { telefono_responsable, ...campos } = formAgenda;
+
     try {
       const res = await fetch('/api/agenda', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...formAgenda,
+          ...campos,
+          /**
+           * El telefono no es una columna del modelo, asi que viaja en
+           * `datos`. Si se enviara suelto, el esquema del servidor lo
+           * descartaria en silencio por ser una clave que no conoce.
+           */
+          datos: telefono_responsable ? { telefono_responsable } : {},
           // El servidor decide el estado final; aqui solo se pide cupo.
           estado: 'cupo',
           texto_original: textoIA || undefined,
@@ -399,6 +411,32 @@ export default function AgendaPage() {
               value={formAgenda.direccion}
               onChange={e => setFormAgenda({...formAgenda, direccion: e.target.value})}
             />
+          </div>
+
+          {/* Quien responde por la reunion. Se escribia en el texto («numero
+              de responsable 321 123 4567») y acababa en «no supe donde poner
+              esto», porque no habia campo donde ponerlo. */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Responsable</label>
+              <input
+                type="text"
+                className="w-full border border-slate-300 rounded-lg p-3"
+                placeholder="Quién responde"
+                value={formAgenda.responsable}
+                onChange={e => setFormAgenda({...formAgenda, responsable: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Teléfono</label>
+              <input
+                type="tel"
+                className="w-full border border-slate-300 rounded-lg p-3"
+                placeholder="Ej: 321 123 4567"
+                value={formAgenda.telefono_responsable}
+                onChange={e => setFormAgenda({...formAgenda, telefono_responsable: e.target.value})}
+              />
+            </div>
           </div>
 
           {/* Lo que hay que conseguir. Antes la IA lo reconocía y se perdía
