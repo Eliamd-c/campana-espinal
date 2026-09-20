@@ -10,11 +10,21 @@ interface TablaRevisionProps {
 
 const UMBRAL_CONFIANZA = 85;
 
+const CEDULA_VALIDA = /^\d{7,12}$/;
+
+interface Resumen {
+  guardados: number;
+  fallidos: number;
+  invalidos: number;
+}
+
 export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
   const [guardando, setGuardando] = useState<Set<number>>(new Set());
   const [guardados, setGuardados] = useState<Set<number>>(new Set());
   const [errores, setErrores] = useState<Record<number, string>>({});
   const [duplicados, setDuplicados] = useState<Record<number, any>>({});
+  const [guardandoTodos, setGuardandoTodos] = useState(false);
+  const [resumen, setResumen] = useState<Resumen | null>(null);
 
   /**
    * Comprueba en una sola petición cuáles de las cédulas leídas ya están en
@@ -76,7 +86,7 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
     const r = registros[idx];
     
     // Validación básica
-    if (!/^\d{7,12}$/.test(r.cedula.valor)) {
+    if (!CEDULA_VALIDA.test(r.cedula.valor)) {
       setErrores(prev => ({ ...prev, [idx]: "Cédula inválida (7-12 dígitos)" }));
       return;
     }
@@ -109,6 +119,127 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
     }
   };
 
+  // Filas que todavía no se han guardado: son las que toca el botón de lote.
+  const pendientes = registros
+    .map((_, idx) => idx)
+    .filter((idx) => !guardados.has(idx));
+
+  /**
+   * Campos que el OCR leyó con poca confianza y nadie ha tocado todavía. Se
+   * cuentan solo los de filas pendientes: avisar de lo ya guardado no sirve
+   * de nada.
+   */
+  const dudosos = pendientes.reduce((total, idx) => {
+    const r = registros[idx];
+    return (
+      total +
+      (["cedula", "nombre", "telefono", "barrio"] as const).filter(
+        (campo) => r[campo].confianza < UMBRAL_CONFIANZA
+      ).length
+    );
+  }, 0);
+
+  /**
+   * Guarda de una vez todas las filas pendientes.
+   *
+   * Con veinte registros por planilla, guardar fila a fila son veinte clics y
+   * veinte peticiones; en una jornada de campo eso es el cuello de botella
+   * real del módulo. Se manda un solo lote a la ruta de importación, que hace
+   * upsert igual que el alta individual (una cédula ya existente se actualiza,
+   * no se duplica).
+   *
+   * Las cédulas mal leídas no se envían: se marcan en su fila para que la
+   * persona las corrija y vuelva a darle. Mandarlas sería peor que no
+   * guardarlas, porque entrarían al padrón con un número inventado.
+   */
+  const guardarTodos = async () => {
+    setResumen(null);
+
+    const invalidos: number[] = [];
+    const validos: number[] = [];
+
+    for (const idx of pendientes) {
+      if (CEDULA_VALIDA.test(registros[idx].cedula.valor)) {
+        validos.push(idx);
+      } else {
+        invalidos.push(idx);
+      }
+    }
+
+    setErrores((prev) => {
+      const e = { ...prev };
+      for (const idx of validos) delete e[idx];
+      for (const idx of invalidos) e[idx] = "Cédula inválida (7-12 dígitos)";
+      return e;
+    });
+
+    if (validos.length === 0) {
+      setResumen({ guardados: 0, fallidos: 0, invalidos: invalidos.length });
+      return;
+    }
+
+    setGuardandoTodos(true);
+
+    try {
+      const res = await fetch("/api/contactos/bulk-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactos: validos.map((idx) => ({
+            cedula: registros[idx].cedula.valor,
+            nombre: registros[idx].nombre.valor,
+            telefono: registros[idx].telefono.valor,
+            barrio: registros[idx].barrio.valor,
+          })),
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al guardar el lote");
+
+      /**
+       * La ruta devuelve totales y la lista de cédulas que fallaron. Se marca
+       * como guardada cada fila cuya cédula no aparezca entre los errores, en
+       * vez de dar por buena la tanda entera: si media planilla falló, la
+       * persona tiene que verlo en la fila concreta.
+       */
+      const fallidas = new Map<string, string>(
+        (json.data?.errores ?? []).map((e: { cedula: string; error: string }) => [e.cedula, e.error])
+      );
+
+      const reciénGuardados: number[] = [];
+      const nuevosErrores: Record<number, string> = {};
+
+      for (const idx of validos) {
+        const fallo = fallidas.get(registros[idx].cedula.valor);
+        if (fallo) nuevosErrores[idx] = fallo;
+        else reciénGuardados.push(idx);
+      }
+
+      setGuardados((prev) => {
+        const s = new Set(prev);
+        for (const idx of reciénGuardados) s.add(idx);
+        return s;
+      });
+      setErrores((prev) => ({ ...prev, ...nuevosErrores }));
+      setResumen({
+        guardados: reciénGuardados.length,
+        fallidos: Object.keys(nuevosErrores).length,
+        invalidos: invalidos.length,
+      });
+    } catch (err: any) {
+      // El lote no llegó: ninguna fila cambia de estado, se puede reintentar.
+      setResumen({ guardados: 0, fallidos: validos.length, invalidos: invalidos.length });
+      setErrores((prev) => {
+        const e = { ...prev };
+        for (const idx of validos) e[idx] = err.message || "Error al guardar";
+        return e;
+      });
+    } finally {
+      setGuardandoTodos(false);
+    }
+  };
+
   const claseInput = (idx: number, campo: keyof RegistroEscaneado) => {
     const r = registros[idx];
     const confianza = r[campo].confianza;
@@ -137,6 +268,53 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
           Tip: El sistema actualizará el registro si la cédula ya existe.
         </span>
       </div>
+
+      {/* Guardado en bloque */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+        <div className="text-sm text-gray-600">
+          {pendientes.length > 0 ? (
+            <>
+              <strong>{pendientes.length}</strong> {pendientes.length === 1 ? "registro pendiente" : "registros pendientes"}
+              {dudosos > 0 && (
+                <span className="ml-2 text-yellow-700">
+                  · {dudosos} {dudosos === 1 ? "campo sin revisar" : "campos sin revisar"} (en amarillo)
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-emerald-700 font-medium">Todos los registros están guardados.</span>
+          )}
+        </div>
+
+        {pendientes.length > 0 && (
+          <button
+            onClick={guardarTodos}
+            disabled={guardandoTodos}
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-bold px-5 py-2 rounded-lg transition-all"
+          >
+            {guardandoTodos ? "Guardando..." : `Guardar todos (${pendientes.length})`}
+          </button>
+        )}
+      </div>
+
+      {resumen && (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            resumen.fallidos + resumen.invalidos === 0
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-yellow-300 bg-yellow-50 text-yellow-900"
+          }`}
+        >
+          <strong>{resumen.guardados}</strong> {resumen.guardados === 1 ? "registro guardado" : "registros guardados"}
+          {resumen.fallidos > 0 && <> · {resumen.fallidos} con error</>}
+          {resumen.invalidos > 0 && <> · {resumen.invalidos} con cédula inválida</>}
+          {resumen.fallidos + resumen.invalidos > 0 && (
+            <span className="block text-xs mt-1">
+              Las filas con problema siguen editables abajo: corrígelas y vuelve a guardar.
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm bg-white">
         <table className="min-w-full text-sm">
@@ -179,7 +357,7 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
                   ) : (
                     <button
                       onClick={() => guardarFila(idx)}
-                      disabled={guardando.has(idx)}
+                      disabled={guardando.has(idx) || guardandoTodos}
                       className={`w-full text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                         duplicados[idx] 
                           ? "bg-blue-600 hover:bg-blue-700" 
