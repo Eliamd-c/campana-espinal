@@ -2,8 +2,8 @@
 import { useState, useEffect } from 'react';
 
 export default function AgendaPage() {
-  const [plantillas, setPlantillas] = useState([]);
-  const [agendamientos, setAgendamientos] = useState([]);
+  const [plantillas, setPlantillas] = useState<any[]>([]);
+  const [agendamientos, setAgendamientos] = useState<any[]>([]);
   
   // Phase 1-6 UI goes here...
   
