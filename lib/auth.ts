@@ -112,6 +112,7 @@ export const authOptions: NextAuthOptions = {
           email: registro.email ?? undefined,
           role: registro.role,
           tokenVersion: registro.tokenVersion,
+          permisos: registro.permisos,
         } as any;
       },
     }),
@@ -122,6 +123,7 @@ export const authOptions: NextAuthOptions = {
         token.role = user.role;
         token.sub = user.id;
         token.tv = (user as any).tokenVersion ?? 0;
+        token.permisos = (user as any).permisos ?? [];
         return token;
       }
 
@@ -139,7 +141,7 @@ export const authOptions: NextAuthOptions = {
         try {
           const actual = await prisma.user.findUnique({
             where: { id: token.sub as string },
-            select: { activo: true, role: true, tokenVersion: true },
+            select: { activo: true, role: true, tokenVersion: true, permisos: true },
           });
 
           if (!actual || !actual.activo || actual.tokenVersion !== token.tv) {
@@ -149,8 +151,14 @@ export const authOptions: NextAuthOptions = {
             return {} as typeof token;
           }
 
-          // El rol puede haber cambiado desde que se emitió el token.
+          /**
+           * Rol y permisos pueden haber cambiado desde que se emitió el
+           * token. Se refrescan para que la interfaz muestre lo que
+           * corresponde; la decisión de si una acción se permite la sigue
+           * tomando el servidor en cada ruta, no esto.
+           */
           token.role = actual.role;
+          token.permisos = actual.permisos;
         } catch (error) {
           // Si la base no responde, se conserva la sesión: cortar el acceso a
           // toda la campaña por un fallo de red sería peor.
@@ -166,6 +174,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.role = token.role as string;
         (session.user as any).id = token.sub;
+        (session.user as any).permisos = (token.permisos as string[]) ?? [];
       }
       return session;
     },

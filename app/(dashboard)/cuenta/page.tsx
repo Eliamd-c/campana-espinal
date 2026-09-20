@@ -1,28 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSession } from "next-auth/react";
-
-interface Usuario {
-  id: string;
-  username: string | null;
-  name: string | null;
-  role: string;
-  activo: boolean;
-  ultimoAcceso: string | null;
-}
+import { GestionUsuarios } from "./components/GestionUsuarios";
+import { PERMISOS, GRUPOS_DE_PERMISOS } from "@/lib/permisos";
 
 /**
  * Pantalla de cuenta.
  *
- * Cada persona cambia aquí su contraseña, y quien tenga rol de administrador
- * ve además la gestión de usuarios. Antes no existía nada de esto: había una
- * sola cuenta compartida, así que no se sabía quién hacía qué y no se podía
- * cerrar el acceso a nadie que dejara el equipo.
+ * Cada persona ve aquí lo que puede hacer y cambia su contraseña. Quien tenga
+ * el permiso de gestión ve además las cuentas del panel. Antes no existía nada
+ * de esto: había una sola cuenta compartida, así que no se sabía quién hacía
+ * qué y no se podía cerrar el acceso a nadie que dejara el equipo.
  */
 export default function CuentaPage() {
   const { data: session } = useSession();
-  const esAdmin = (session?.user as any)?.role === "admin";
+  const usuario = session?.user as any;
+  const permisos: string[] = usuario?.permisos ?? [];
+
+  /**
+   * Quien ve la gestión de cuentas es quien tiene el permiso, no quien tiene
+   * un rol. Ocultarla es comodidad: si alguien llega a la pantalla sin el
+   * permiso, el servidor le responde 403 igualmente.
+   */
+  const puedeGestionar = permisos.includes(PERMISOS.USUARIOS_GESTIONAR);
 
   return (
     <div className="space-y-10 max-w-3xl">
@@ -31,16 +32,17 @@ export default function CuentaPage() {
         <p className="text-gray-600 mt-1">
           Sesión iniciada como{" "}
           <span className="font-medium">{session?.user?.name ?? "—"}</span>
-          {esAdmin && (
+          {puedeGestionar && (
             <span className="ml-2 text-xs bg-gray-900 text-white px-2 py-0.5 rounded">
-              administrador
+              gestiona cuentas
             </span>
           )}
         </p>
       </div>
 
+      <MisPermisos permisos={permisos} />
       <CambiarContrasena />
-      {esAdmin && <GestionUsuarios />}
+      {puedeGestionar && <GestionUsuarios miId={usuario?.id} />}
     </div>
   );
 }
@@ -143,172 +145,27 @@ function Campo({
   );
 }
 
-function GestionUsuarios() {
-  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
-  const [cargando, setCargando] = useState(true);
-  const [aviso, setAviso] = useState<string | null>(null);
-  const [nuevo, setNuevo] = useState({ username: "", nombre: "", rol: "coordinador", password: "" });
-
-  async function cargar() {
-    setCargando(true);
-    try {
-      const res = await fetch("/api/usuarios");
-      const json = await res.json();
-      setUsuarios(json.data ?? []);
-    } finally {
-      setCargando(false);
-    }
-  }
-
-  useEffect(() => {
-    cargar();
-  }, []);
-
-  async function crear(e: React.FormEvent) {
-    e.preventDefault();
-    setAviso(null);
-
-    const res = await fetch("/api/usuarios", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(nuevo),
-    });
-    const json = await res.json();
-
-    if (!res.ok) {
-      setAviso(json.error ?? "No se pudo crear el usuario.");
-      return;
-    }
-
-    setNuevo({ username: "", nombre: "", rol: "coordinador", password: "" });
-    setAviso(null);
-    cargar();
-  }
-
-  async function cambiarEstado(id: string, activo: boolean) {
-    const res = await fetch("/api/usuarios", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, activo }),
-    });
-    const json = await res.json();
-    if (!res.ok) setAviso(json.error ?? "No se pudo actualizar.");
-    cargar();
-  }
-
+/** Lo que esta cuenta puede hacer, para que cada persona lo sepa. */
+function MisPermisos({ permisos }: { permisos: string[] }) {
   return (
     <section className="bg-white rounded-lg border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900">Usuarios del panel</h2>
-      <p className="text-sm text-gray-500 mt-1">
-        Cada persona con su propia cuenta. Al desactivar una, esa persona deja
-        de entrar inmediatamente, sin afectar a las demás.
-      </p>
-
-      {aviso && <p className="text-sm text-red-600 mt-3">{aviso}</p>}
-
-      <div className="mt-5 overflow-x-auto">
-        {cargando ? (
-          <p className="text-sm text-gray-500">Cargando…</p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b border-gray-200">
-                <th className="py-2 pr-4 font-medium">Usuario</th>
-                <th className="py-2 pr-4 font-medium">Rol</th>
-                <th className="py-2 pr-4 font-medium">Último acceso</th>
-                <th className="py-2 pr-4 font-medium">Estado</th>
-                <th className="py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {usuarios.map((u) => (
-                <tr key={u.id} className="border-b border-gray-100">
-                  <td className="py-2 pr-4 font-medium text-gray-900">{u.username}</td>
-                  <td className="py-2 pr-4 text-gray-600">{u.role}</td>
-                  <td className="py-2 pr-4 text-gray-500">
-                    {u.ultimoAcceso
-                      ? new Date(u.ultimoAcceso).toLocaleString("es-CO")
-                      : "nunca"}
-                  </td>
-                  <td className="py-2 pr-4">
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs ${
-                        u.activo ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-600"
-                      }`}
-                    >
-                      {u.activo ? "activo" : "desactivado"}
-                    </span>
-                  </td>
-                  <td className="py-2 text-right">
-                    <button
-                      onClick={() => cambiarEstado(u.id, !u.activo)}
-                      className="text-xs underline text-gray-600 hover:text-gray-900"
-                    >
-                      {u.activo ? "Desactivar" : "Activar"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <form onSubmit={crear} className="mt-8 border-t border-gray-200 pt-6 space-y-4">
-        <h3 className="font-medium text-gray-900">Añadir usuario</h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <label className="block">
-            <span className="block text-sm font-medium text-gray-700 mb-1">Usuario</span>
-            <input
-              value={nuevo.username}
-              onChange={(e) => setNuevo({ ...nuevo, username: e.target.value })}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-              placeholder="nombre.apellido"
-            />
-          </label>
-
-          <label className="block">
-            <span className="block text-sm font-medium text-gray-700 mb-1">Nombre para mostrar</span>
-            <input
-              value={nuevo.nombre}
-              onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="block">
-            <span className="block text-sm font-medium text-gray-700 mb-1">Rol</span>
-            <select
-              value={nuevo.rol}
-              onChange={(e) => setNuevo({ ...nuevo, rol: e.target.value })}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-            >
-              <option value="coordinador">coordinador</option>
-              <option value="admin">administrador</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="block text-sm font-medium text-gray-700 mb-1">Contraseña inicial</span>
-            <input
-              type="password"
-              value={nuevo.password}
-              onChange={(e) => setNuevo({ ...nuevo, password: e.target.value })}
-              autoComplete="new-password"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-            />
-          </label>
-        </div>
-
-        <button
-          type="submit"
-          disabled={!nuevo.username || !nuevo.password}
-          className="bg-gray-900 text-white px-4 py-2 rounded-md text-sm font-medium disabled:opacity-40"
-        >
-          Crear usuario
-        </button>
-      </form>
+      <h2 className="text-lg font-semibold text-gray-900">Lo que puedes hacer</h2>
+      {permisos.length === 0 ? (
+        <p className="text-sm text-gray-600 mt-2">
+          Tu cuenta todavía no tiene permisos. Pídeselos a quien gestiona las
+          cuentas del panel.
+        </p>
+      ) : (
+        <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1">
+          {GRUPOS_DE_PERMISOS.flatMap((g) => g.permisos)
+            .filter((p) => permisos.includes(p.permiso))
+            .map((p) => (
+              <li key={p.permiso} className="text-sm text-gray-700">
+                · {p.etiqueta}
+              </li>
+            ))}
+        </ul>
+      )}
     </section>
   );
 }
