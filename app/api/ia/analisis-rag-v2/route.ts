@@ -8,6 +8,7 @@ import { traceAICall, traceBDOperation } from "@/lib/tracing-helpers";
 import { logger } from "@/lib/logger";
 import { exigirPermiso } from "@/lib/auth/permisos-ruta";
 import { PERMISOS } from "@/lib/permisos";
+import { generarConIA } from "@/lib/ia/generar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -209,30 +210,23 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Invoca a la API de Gemini con temperatura muy baja para respuestas consistentes
+ * Pide el análisis al proveedor de IA configurado, con temperatura muy baja
+ * para que la misma pregunta no dé respuestas distintas cada vez.
+ *
+ * Antes esta función iba directa a Gemini leyendo la clave del entorno, así
+ * que ignoraba la configurada desde el panel y se quedaba muerta cuando a
+ * Gemini se le acababa el crédito.
  */
 async function generarAnalisisRAG(
   prompt: string,
   options: { temperature: number; maxTokens: number }
 ): Promise<string> {
-  const { GoogleGenerativeAI } = await import("@google/generative-ai");
-  const key = process.env.GEMINI_API_KEY;
-  if (!key || key === "dummy_key") {
-    throw new Error("No se ha configurado la API Key de Gemini en las variables de entorno.");
-  }
-
-  const genai = new GoogleGenerativeAI(key);
-  const model = genai.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: options.temperature,
-      maxOutputTokens: options.maxTokens,
-      topP: 0.9,
-      topK: 40,
-    },
+  const { texto } = await generarConIA({
+    modulo: "analisis",
+    prompt,
+    temperatura: options.temperature,
+    maxTokens: options.maxTokens,
   });
 
-  return result.response.text();
+  return texto;
 }

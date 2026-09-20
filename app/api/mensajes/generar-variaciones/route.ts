@@ -8,6 +8,7 @@ import { handleError } from "@/lib/api/errors";
 import { envolverNoConfiable, AVISO_CONTENIDO_EXTERNO } from "@/lib/ia/sanitizar";
 import { exigirPermiso } from "@/lib/auth/permisos-ruta";
 import { PERMISOS } from "@/lib/permisos";
+import { ErrorIA } from "@/lib/ia/generar";
 
 export async function POST(req: NextRequest) {
   try {
@@ -68,6 +69,15 @@ Reglas estrictas:
       }, { status: 500 });
     }
   } catch (error: any) {
+    // Sin crédito o sin clave se puede arreglar desde Configuración; merece
+    // un aviso propio y no el error genérico de servidor.
+    if (error instanceof ErrorIA) {
+      return NextResponse.json(
+        { error: error.message, codigo: error.codigo },
+        { status: error.codigo === "SIN_CLAVE" ? 503 : 502 }
+      );
+    }
+
     return handleError(error, "POST /api/mensajes/generar-variaciones");
   }
 }

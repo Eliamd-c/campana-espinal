@@ -1,303 +1,75 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ejecutarHerramienta } from "./ia-tools";
-import { logger } from "./logger";
-
-// Patrón oficial de inicialización
-const geminiKey = process.env.GEMINI_API_KEY;
-const genAI = geminiKey && geminiKey !== "dummy_key" ? new GoogleGenerativeAI(geminiKey) : null;
+import { ejecutarAgente, type TurnoNeutro, type DefinicionHerramienta } from "./ia/agente";
 
 /**
- * Agente de Inteligencia Electoral con Function Calling Nativo.
- * Ejecuta un loop agentico llamando a Gemini 2.5 Flash y ejecutando las herramientas
- * solicitadas hasta que el modelo decida responder de forma final.
- * 
- * @param pregunta Pregunta actual del coordinador electoral
- * @param historial Historial de conversación en formato compatible con Gemini
- * @param toolDefinitions Definiciones de herramientas registradas
+ * Agente de Inteligencia Electoral con llamada a herramientas.
+ *
+ * El bucle vive ahora en `lib/ia/agente.ts` y sirve tanto para Gemini como
+ * para OpenAI; este archivo se queda como adaptador, porque las rutas le
+ * pasan el historial ya con forma de Gemini. El nombre del archivo se
+ * conserva para no tocar a quien lo importa, pero de Gemini ya solo queda
+ * como una opción más.
  */
-export async function generarConHerramientasV2(
-  pregunta: string,
-  historial: { role: "user" | "model"; parts: Array<{ text?: string; functionCall?: any; functionResponse?: any }> }[],
-  toolDefinitions: any[]
-): Promise<string> {
-  if (!genAI) {
-    throw new Error("GEMINI_API_KEY no está configurada o es inválida en el entorno.");
-  }
 
-  // Filtrar tool definitions para que coincidan con la firma esperada por Gemini SDK
-  const formattedTools = toolDefinitions.map(tool => ({
-    name: tool.name,
-    description: tool.description,
-    parameters: {
-      type: tool.parameters.type,
-      properties: tool.parameters.properties || {},
-      required: tool.parameters.required || []
-    }
-  }));
-
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    tools: [
-      {
-        functionDeclarations: formattedTools
-      }
-    ]
-  });
-
-  // Convertir el historial al formato compatible de Gemini
-  // Gemini requiere que los roles sean estrictamente "user" o "model"
-  const messages: any[] = historial.map(h => ({
-    role: h.role,
-    parts: h.parts.map(p => {
-      if (p.text !== undefined) return { text: p.text };
-      if (p.functionCall !== undefined) return { functionCall: p.functionCall };
-      if (p.functionResponse !== undefined) return { functionResponse: p.functionResponse };
-      return { text: "" };
-    })
-  }));
-
-  // Añadir la pregunta actual del coordinador al final del historial
-  messages.push({
-    role: "user",
-    parts: [
-      {
-        text: `Eres el Analista Electoral de la Campaña El Espinal.
-        
-Pregunta actual: "${pregunta}"
-
-Usa las herramientas disponibles para consultar la base de datos y obtener respuestas exactas.
-Si necesitas datos para responder, usa las herramientas. Si ya tienes la respuesta o la pregunta es un saludo/agradecimiento, responde directamente.
-IMPORTANTE: ejecutar_consulta_sql es de SOLO LECTURA (SELECT sobre las tablas de la campana). Nunca pidas claves al usuario: no existe forma de modificar datos por SQL. Si te piden crear o cambiar registros, usa las herramientas especificas; si no hay ninguna para eso, dilo con claridad en vez de intentarlo con SQL.`
-      }
-    ]
-  });
-
-  let respuestaFinal = "No se pudo generar una respuesta.";
-  let totalToolCalls = 0;
-  const maxIterations = 5;
-  const inicioTime = Date.now();
-
-  for (let i = 0; i < maxIterations; i++) {
-    logger.info(`[Agente IA] Iteración ${i + 1}/${maxIterations} en curso...`, { sesion: messages.length });
-    
-    const response = await model.generateContent({
-      contents: messages
-    });
-
-    const candidate = response.response;
-    const text = candidate.text();
-    if (text) {
-      respuestaFinal = text;
-    }
-
-    // Obtener todas las functionCalls solicitadas en este turno
-    const functionCalls = candidate.functionCalls();
-    
-    // Si no hay llamadas a herramientas, significa que el modelo terminó y dio su respuesta final
-    if (!functionCalls || functionCalls.length === 0) {
-      logger.info(`[Agente IA] Bucle terminado por el modelo. Respuesta final obtenida.`, {
-        iteraciones: i + 1,
-        tiempoMs: Date.now() - inicioTime,
-        herramientasEjecutadas: totalToolCalls
-      });
-      break;
-    }
-
-    totalToolCalls += functionCalls.length;
-    logger.info(`[Agente IA] Gemini solicitó ejecutar ${functionCalls.length} herramientas`, {
-      llamadas: functionCalls.map(c => c.name)
-    });
-
-    // Ejecutar las herramientas solicitadas en paralelo
-    const toolResponses = await Promise.all(
-      functionCalls.map(async (call) => {
-        try {
-          logger.info(`[Agente IA] Ejecutando tool: ${call.name}`, { args: call.args });
-          const resultado = await ejecutarHerramienta(call.name, call.args);
-          
-          let parsedResult;
-          try {
-            parsedResult = JSON.parse(resultado);
-          } catch {
-            parsedResult = { rawResponse: resultado };
-          }
-
-          return {
-            name: call.name,
-            response: parsedResult
-          };
-        } catch (error: any) {
-          logger.error(`[Agente IA] Error ejecutando tool ${call.name}`, error);
-          return {
-            name: call.name,
-            response: { error: error.message || "Error desconocido ejecutando la herramienta." }
-          };
-        }
-      })
-    );
-
-    // Añadir la solicitud del modelo y las respuestas al historial de mensajes
-    messages.push({
-      role: "user",
-      parts: toolResponses.map(res => ({
-        functionResponse: {
-          name: res.name,
-          response: res.response
-        }
-      }))
-    });
-  }
-
-  return respuestaFinal;
+interface HistorialGemini {
+  role: "user" | "model";
+  parts: Array<{ text?: string; functionCall?: any; functionResponse?: any }>;
 }
 
 /**
- * Agente de Inteligencia Electoral con Function Calling Nativo y Soporte de Streaming.
- * Ejecuta un loop agentico llamando a Gemini 2.5 Flash y ejecutando las herramientas
- * solicitadas hasta que el modelo decida responder de forma final. Cuando el modelo
- * responde con texto final, transmite los tokens en tiempo real a través del callback.
+ * El historial que llega de las rutas es solo texto: la memoria del chat
+ * guarda lo dicho, no las llamadas a herramientas de conversaciones
+ * anteriores. Se traduce a turnos neutros quedándose con eso.
+ */
+function aTurnosNeutros(historial: HistorialGemini[]): TurnoNeutro[] {
+  return historial.map((h) => ({
+    rol: h.role === "model" ? ("modelo" as const) : ("usuario" as const),
+    texto: h.parts.map((p) => p.text ?? "").join(""),
+  }));
+}
+
+const INSTRUCCIONES = `Eres el Analista Electoral de la Campaña El Espinal.
+
+Usa las herramientas disponibles para consultar la base de datos y obtener respuestas exactas.
+Si necesitas datos para responder, usa las herramientas. Si ya tienes la respuesta o la pregunta es un saludo/agradecimiento, responde directamente.
+IMPORTANTE: ejecutar_consulta_sql es de SOLO LECTURA (SELECT sobre las tablas de la campana). Nunca pidas claves al usuario: no existe forma de modificar datos por SQL. Si te piden crear o cambiar registros, usa las herramientas especificas; si no hay ninguna para eso, dilo con claridad en vez de intentarlo con SQL.`;
+
+function armarPregunta(pregunta: string): string {
+  return `${INSTRUCCIONES}\n\nPregunta actual: "${pregunta}"`;
+}
+
+export async function generarConHerramientasV2(
+  pregunta: string,
+  historial: HistorialGemini[],
+  toolDefinitions: DefinicionHerramienta[]
+): Promise<string> {
+  return ejecutarAgente({
+    pregunta: armarPregunta(pregunta),
+    historial: aTurnosNeutros(historial),
+    herramientas: toolDefinitions,
+    ejecutar: (nombre, argumentos) => ejecutarHerramienta(nombre, argumentos),
+  });
+}
+
+/**
+ * Igual que la anterior, pero avisando del texto final por `onToken`.
+ *
+ * La respuesta llega de una vez, no token a token: en un bucle con
+ * herramientas no se sabe si lo que empieza a llegar es la respuesta o una
+ * llamada a función hasta que el turno se cierra. Se prefiere tardar un poco
+ * más en pintar a pintar un texto que luego resulte no ser la respuesta.
  */
 export async function generarConHerramientasV2Stream(
   pregunta: string,
-  historial: { role: "user" | "model"; parts: Array<{ text?: string; functionCall?: any; functionResponse?: any }> }[],
-  toolDefinitions: any[],
+  historial: HistorialGemini[],
+  toolDefinitions: DefinicionHerramienta[],
   onToken: (token: string) => void
 ): Promise<string> {
-  if (!genAI) {
-    throw new Error("GEMINI_API_KEY no está configurada o es inválida en el entorno.");
-  }
-
-  const formattedTools = toolDefinitions.map(tool => ({
-    name: tool.name,
-    description: tool.description,
-    parameters: {
-      type: tool.parameters.type,
-      properties: tool.parameters.properties || {},
-      required: tool.parameters.required || []
-    }
-  }));
-
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    tools: [
-      {
-        functionDeclarations: formattedTools
-      }
-    ]
+  return ejecutarAgente({
+    pregunta: armarPregunta(pregunta),
+    historial: aTurnosNeutros(historial),
+    herramientas: toolDefinitions,
+    ejecutar: (nombre, argumentos) => ejecutarHerramienta(nombre, argumentos),
+    onToken,
   });
-
-  const messages: any[] = historial.map(h => ({
-    role: h.role,
-    parts: h.parts.map(p => {
-      if (p.text !== undefined) return { text: p.text };
-      if (p.functionCall !== undefined) return { functionCall: p.functionCall };
-      if (p.functionResponse !== undefined) return { functionResponse: p.functionResponse };
-      return { text: "" };
-    })
-  }));
-
-  messages.push({
-    role: "user",
-    parts: [
-      {
-        text: `Eres el Analista Electoral de la Campaña El Espinal.
-        
-Pregunta actual: "${pregunta}"
-
-Usa las herramientas disponibles para consultar la base de datos y obtener respuestas exactas.
-Si necesitas datos para responder, usa las herramientas. Si ya tienes la respuesta o la pregunta es un saludo/agradecimiento, responde directamente.
-IMPORTANTE: ejecutar_consulta_sql es de SOLO LECTURA (SELECT sobre las tablas de la campana). Nunca pidas claves al usuario: no existe forma de modificar datos por SQL. Si te piden crear o cambiar registros, usa las herramientas especificas; si no hay ninguna para eso, dilo con claridad en vez de intentarlo con SQL.`
-      }
-    ]
-  });
-
-  let respuestaFinal = "";
-  let totalToolCalls = 0;
-  const maxIterations = 5;
-  const inicioTime = Date.now();
-
-  for (let i = 0; i < maxIterations; i++) {
-    logger.info(`[Agente IA Stream] Iteración ${i + 1}/${maxIterations} en curso...`, { sesion: messages.length });
-    
-    const resultStream = await model.generateContentStream({
-      contents: messages
-    });
-
-    // Esperar respuesta completa de esta iteración para comprobar llamadas a funciones
-    const response = await resultStream.response;
-    const functionCalls = response.functionCalls();
-    
-    // Si no hay llamadas a herramientas, transmitimos el stream final de texto
-    if (!functionCalls || functionCalls.length === 0) {
-      logger.info(`[Agente IA Stream] Bucle terminado por el modelo. Transmitiendo respuesta final...`, {
-        iteraciones: i + 1,
-        tiempoMs: Date.now() - inicioTime,
-        herramientasEjecutadas: totalToolCalls
-      });
-
-      // Leer y transmitir el stream
-      for await (const chunk of resultStream.stream) {
-        const text = chunk.text();
-        if (text) {
-          respuestaFinal += text;
-          onToken(text);
-        }
-      }
-      break;
-    }
-
-    totalToolCalls += functionCalls.length;
-    logger.info(`[Agente IA Stream] Gemini solicitó ejecutar ${functionCalls.length} herramientas`, {
-      llamadas: functionCalls.map(c => c.name)
-    });
-
-    // Ejecutar las herramientas solicitadas en paralelo
-    const toolResponses = await Promise.all(
-      functionCalls.map(async (call) => {
-        try {
-          logger.info(`[Agente IA Stream] Ejecutando tool: ${call.name}`, { args: call.args });
-          const resultado = await ejecutarHerramienta(call.name, call.args);
-          
-          let parsedResult;
-          try {
-            parsedResult = JSON.parse(resultado);
-          } catch {
-            parsedResult = { rawResponse: resultado };
-          }
-
-          return {
-            name: call.name,
-            response: parsedResult
-          };
-        } catch (error: any) {
-          logger.error(`[Agente IA Stream] Error ejecutando tool ${call.name}`, error);
-          return {
-            name: call.name,
-            response: { error: error.message || "Error desconocido ejecutando la herramienta." }
-          };
-        }
-      })
-    );
-
-    // Registrar en el historial de mensajes
-    messages.push({
-      role: "model",
-      parts: functionCalls.map(call => ({
-        functionCall: call
-      }))
-    });
-
-    messages.push({
-      role: "user",
-      parts: toolResponses.map(res => ({
-        functionResponse: {
-          name: res.name,
-          response: res.response
-        }
-      }))
-    });
-  }
-
-  return respuestaFinal;
 }
-

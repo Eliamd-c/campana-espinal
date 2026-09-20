@@ -13,6 +13,7 @@ import { ejecutarRAG, ejecutarRAGStream } from "@/lib/rag-executor";
 import { traceBDOperation, traceAICall } from "@/lib/tracing-helpers";
 import { exigirPermiso } from "@/lib/auth/permisos-ruta";
 import { PERMISOS } from "@/lib/permisos";
+import { ErrorIA } from "@/lib/ia/generar";
 
 // ═══════════════════════════════════════════════════════════════
 // POST /api/ia/analisis
@@ -210,6 +211,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Faltan parámetros o tipo inválido" }, { status: 400 });
 
   } catch (error: any) {
+    /**
+     * Quedarse sin crédito o sin clave no es un fallo del sistema: es algo
+     * que alguien puede arreglar en Configuración en un minuto. Si se
+     * devuelve el mismo "error al procesar" que para cualquier avería, nadie
+     * sabe que basta con recargar el saldo.
+     */
+    if (error instanceof ErrorIA) {
+      logger.warn("[analisis] Sin proveedor de IA disponible", { codigo: error.codigo });
+      return NextResponse.json(
+        { error: error.message, codigo: error.codigo },
+        { status: error.codigo === "SIN_CLAVE" ? 503 : 502 }
+      );
+    }
+
     console.error("POST /api/ia/analisis error:", error);
     return NextResponse.json({ error: "Error al procesar la solicitud con IA" }, { status: 500 });
   }

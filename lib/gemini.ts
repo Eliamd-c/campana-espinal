@@ -1,37 +1,20 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { envolverNoConfiable, AVISO_CONTENIDO_EXTERNO } from "@/lib/ia/sanitizar";
+import { generarConIA } from "@/lib/ia/generar";
 
+/**
+ * Pide un análisis en texto libre al proveedor de IA configurado.
+ *
+ * Antes esta función elegía proveedor mirando solo `process.env`, así que las
+ * claves guardadas desde el panel no se aplicaban; y cuando algo fallaba
+ * devolvía el error **como si fuera la respuesta**: «Error de IA (ChatGPT):
+ * ...» acababa guardado en el historial del chat y mostrado al coordinador
+ * como si fuera un análisis. Ahora el fallo se lanza y quien llama decide qué
+ * hacer con él, que es lo único que permite distinguir un análisis de una
+ * avería.
+ */
 export async function generarAnalisis(prompt: string): Promise<string> {
-  const openAiKey = process.env.OPENAI_API_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
-
-  if (openAiKey && openAiKey.trim() !== "" && openAiKey !== "dummy_key") {
-    try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${openAiKey}` },
-        body: JSON.stringify({ model: "gpt-3.5-turbo", messages: [{ role: "user", content: prompt }] })
-      });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || "Error OpenAI"); }
-      const data = await res.json();
-      return data.choices[0].message.content;
-    } catch (error: any) {
-      return `Error de IA (ChatGPT): ${error.message}`;
-    }
-  }
-
-  if (!geminiKey || geminiKey === "dummy_key") {
-    return "Error: No se ha configurado la API Key de IA en el archivo .env.";
-  }
-
-  try {
-    const genAI = new GoogleGenerativeAI(geminiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const result = await model.generateContent(prompt);
-    return result.response.text();
-  } catch (error: any) {
-    return `Error de IA (Gemini): ${error.message}`;
-  }
+  const { texto } = await generarConIA({ modulo: "analisis", prompt });
+  return texto;
 }
 
 /**

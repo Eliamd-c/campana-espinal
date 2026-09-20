@@ -38,6 +38,8 @@ export interface PeticionIA {
   json?: boolean;
   /** 0 salvo que haga falta variedad: los mismos datos deben dar lo mismo. */
   temperatura?: number;
+  /** Tope de respuesta, para acotar coste y tiempo donde haga falta. */
+  maxTokens?: number;
 }
 
 export interface RespuestaIA {
@@ -92,6 +94,7 @@ async function pedirAGemini(p: PeticionIA, apiKey: string): Promise<string> {
         contents: [{ role: "user", parts: partes }],
         generationConfig: {
           temperature: p.temperatura ?? 0,
+          ...(p.maxTokens ? { maxOutputTokens: p.maxTokens } : {}),
           ...(p.json ? { responseMimeType: "application/json" } : {}),
         },
       }),
@@ -165,6 +168,7 @@ async function pedirAOpenAI(p: PeticionIA, apiKey: string): Promise<string> {
     body: JSON.stringify({
       model: p.adjunto ? MODELOS.openai.vision : MODELOS.openai.texto,
       temperature: p.temperatura ?? 0,
+      ...(p.maxTokens ? { max_tokens: p.maxTokens } : {}),
       ...(p.json ? { response_format: { type: "json_object" } } : {}),
       messages: [{ role: "user", content: p.adjunto ? contenido : p.prompt }],
     }),
@@ -175,6 +179,165 @@ async function pedirAOpenAI(p: PeticionIA, apiKey: string): Promise<string> {
 
   const datos = JSON.parse(cuerpo);
   return datos?.choices?.[0]?.message?.content ?? "";
+}
+
+/**
+ * Lee un flujo SSE y entrega el texto trozo a trozo.
+ *
+ * Los dos proveedores emiten SSE, pero cada uno guarda el texto en un sitio
+ * distinto de su JSON, así que el extractor se pasa por parámetro. OpenAI
+ * además cierra con un `[DONE]` que no es JSON y reventaría el parseo.
+ */
+async function leerSSE(
+  res: Response,
+  extraer: (dato: any) => string,
+  onToken: (t: string) => void,
+): Promise<string> {
+  const lector = res.body?.getReader();
+  if (!lector) return "";
+
+  const decodificador = new TextDecoder();
+  let pendiente = "";
+  let acumulado = "";
+
+  while (true) {
+    const { done, value } = await lector.read();
+    if (done) break;
+
+    pendiente += decodificador.decode(value, { stream: true });
+
+    // Un trozo de red puede cortar una línea por la mitad: se guarda el
+    // resto para el siguiente ciclo en vez de intentar parsearlo ahora.
+    const lineas = pendiente.split("\n");
+    pendiente = lineas.pop() ?? "";
+
+    for (const linea of lineas) {
+      const limpia = linea.trim();
+      if (!limpia.startsWith("data:")) continue;
+
+      const carga = limpia.slice(5).trim();
+      if (carga === "[DONE]") continue;
+
+      try {
+        const texto = extraer(JSON.parse(carga));
+        if (texto) {
+          acumulado += texto;
+          onToken(texto);
+        }
+      } catch {
+        // Un fragmento suelto que no parsea no justifica tirar la respuesta.
+      }
+    }
+  }
+
+  return acumulado;
+}
+
+async function transmitirDeGemini(
+  p: PeticionIA,
+  apiKey: string,
+  onToken: (t: string) => void,
+): Promise<string> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODELOS.gemini.texto}:streamGenerateContent?alt=sse`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: p.prompt }] }],
+        generationConfig: { temperature: p.temperatura ?? 0 },
+      }),
+    },
+  );
+
+  if (!res.ok) throw new FalloProveedor(res.status, await res.text());
+
+  return leerSSE(
+    res,
+    (d) =>
+      d?.candidates?.[0]?.content?.parts
+        ?.map((parte: { text?: string }) => parte.text ?? "")
+        .join("") ?? "",
+    onToken,
+  );
+}
+
+async function transmitirDeOpenAI(
+  p: PeticionIA,
+  apiKey: string,
+  onToken: (t: string) => void,
+): Promise<string> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: MODELOS.openai.texto,
+      temperature: p.temperatura ?? 0,
+      stream: true,
+      messages: [{ role: "user", content: p.prompt }],
+    }),
+  });
+
+  if (!res.ok) throw new FalloProveedor(res.status, await res.text());
+
+  return leerSSE(res, (d) => d?.choices?.[0]?.delta?.content ?? "", onToken);
+}
+
+/**
+ * Igual que `generarConIA`, pero entregando el texto según llega.
+ *
+ * El relevo solo puede ocurrir antes del primer token: en cuanto algo se ha
+ * enviado al navegador no hay forma de retirarlo, y reintentar con otro
+ * proveedor pintaría dos respuestas pegadas. Por eso se comprueba el estado
+ * HTTP antes de empezar a leer el cuerpo.
+ */
+export async function generarConIAStream(
+  p: PeticionIA,
+  onToken: (t: string) => void,
+): Promise<RespuestaIA> {
+  const intentos = await proveedoresDisponibles(p.modulo);
+
+  if (intentos.length === 0) {
+    throw new ErrorIA(
+      "No hay ninguna clave de IA configurada. Añade la de Gemini o la de OpenAI en Configuración.",
+      "SIN_CLAVE",
+    );
+  }
+
+  let ultimoFallo: FalloProveedor | null = null;
+
+  for (let i = 0; i < intentos.length; i++) {
+    const { proveedor, apiKey } = intentos[i];
+
+    try {
+      const texto =
+        proveedor === "openai"
+          ? await transmitirDeOpenAI(p, apiKey, onToken)
+          : await transmitirDeGemini(p, apiKey, onToken);
+
+      return { texto, proveedor };
+    } catch (error) {
+      if (!(error instanceof FalloProveedor)) throw error;
+
+      ultimoFallo = error;
+      const siguiente = intentos[i + 1];
+
+      if (siguiente && convieneRelevar(error.status, error.cuerpo)) {
+        registrarRelevo(p.modulo, proveedor, siguiente.proveedor, `HTTP ${error.status}`);
+        continue;
+      }
+      break;
+    }
+  }
+
+  const sinCupo = ultimoFallo && convieneRelevar(ultimoFallo.status, ultimoFallo.cuerpo);
+
+  throw new ErrorIA(
+    sinCupo
+      ? "Los servicios de IA configurados no tienen crédito disponible."
+      : "El servicio de IA no respondió correctamente.",
+    sinCupo ? "SIN_CUPO" : "FALLO_SERVICIO",
+  );
 }
 
 /** Fallo de un proveedor concreto, con lo justo para decidir si se releva. */

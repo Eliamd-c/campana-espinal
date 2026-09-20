@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// `vi.mock` se eleva por encima de los imports, asi que el modulo real ya
+// recibe los dobles aunque se importe de forma estatica.
+import { proveedoresDisponibles, convieneRelevar } from "@/lib/ia/proveedor";
 
 /**
  * La configuración vive en base de datos, así que se sustituye por un mapa.
@@ -14,8 +17,6 @@ vi.mock("@/lib/configuracion", () => ({
 vi.mock("@/lib/logger", () => ({
   logger: { warn: () => {}, info: () => {}, error: () => {} },
 }));
-
-const { proveedoresDisponibles, convieneRelevar } = await import("@/lib/ia/proveedor");
 
 beforeEach(() => {
   for (const k of Object.keys(valores)) delete valores[k];

@@ -1,9 +1,10 @@
 import { buscarDocumentosHibrido } from "./rag-hybrid-search";
+import { logger } from "./logger";
 import { crearPromptRAG } from "./rag-prompts";
 import { generarAnalisis } from "./gemini";
 import prisma from "./db";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { traceAICall, traceBDOperation } from "./tracing-helpers";
+import { generarConIAStream } from "./ia/generar";
 
 export async function ejecutarRAG(
   pregunta: string,
@@ -29,9 +30,7 @@ export async function ejecutarRAG(
   const prompt = crearPromptRAG(pregunta, documentos);
 
   // 3. Generar respuesta estática
-  const respuesta = await traceAICall("gemini-2.5-flash-static-rag", () =>
-    generarAnalisis(prompt)
-  );
+  const respuesta = await traceAICall("ia-static-rag", () => generarAnalisis(prompt));
 
   // 4. Guardar en historial de chat memoria
   await traceBDOperation("save_chat_memory_rag_assistant", () =>
@@ -93,26 +92,24 @@ export async function ejecutarRAGStream(
   // 2. Crear prompt
   const prompt = crearPromptRAG(pregunta, documentos);
 
-  // 3. Generar respuesta streaming
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey || geminiKey === "dummy_key") {
-    onChunk("Error: No se ha configurado la API Key de Gemini en el archivo .env.");
-    return { documentos_usados: documentos, confianza: 0.5 };
-  }
+  /**
+   * 3. Generar respuesta en streaming.
+   *
+   * Antes esto hablaba directamente con Gemini y, sin su clave, escribía el
+   * aviso de configuración dentro del chat como si fuera la respuesta del
+   * analista. Ahora lo atiende el proveedor configurado, con relevo al otro
+   * si se quedó sin crédito.
+   */
+  let acumulado = "";
 
-  const genAI = new GoogleGenerativeAI(geminiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-  
-  const result = await traceAICall("gemini-2.5-flash-stream-rag", () =>
-    model.generateContentStream(prompt)
+  const { proveedor } = await traceAICall("ia-stream-rag", () =>
+    generarConIAStream({ modulo: "analisis", prompt }, (texto) => {
+      acumulado += texto;
+      onChunk(texto);
+    })
   );
 
-  let acumulado = "";
-  for await (const chunk of result.stream) {
-    const text = chunk.text();
-    acumulado += text;
-    onChunk(text);
-  }
+  logger.info("[rag] Respuesta transmitida", { proveedor });
 
   // 4. Guardar en historial
   await traceBDOperation("save_chat_memory_rag_stream_assistant", () =>
