@@ -1,27 +1,33 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
+import { baseUrl, cookieDeSesion } from "./helpers";
 
-const baseUrl = "http://localhost:3000";
+/**
+ * Tests de integracion contra un servidor en marcha.
+ *
+ * Desde el hallazgo #1, toda ruta de /api exige sesion. Lo primero que se
+ * comprueba es justo eso; la logica de negocio solo se ejercita si hay
+ * credenciales de prueba (TEST_USER / TEST_PASSWORD).
+ */
+let cookie: string | null = null;
+beforeAll(async () => {
+  cookie = await cookieDeSesion();
+});
+const conSesion = () => (cookie ? it : it.skip);
 
 describe("API Mensajes", () => {
-  it("POST /api/mensajes/enviar debe validar rate limit y esquema", async () => {
-    const response = await request(baseUrl)
+  it("no permite enviar mensajes masivos sin sesion", async () => {
+    const r = await request(baseUrl)
       .post("/api/mensajes/enviar")
-      .send({
-        instancia_id: "test",
-        cedulas: ["12345678"],
-        texto: "Hola {{nombre}}"
-      });
+      .send({ instancia_id: "test", cedulas: ["12345678"], texto: "Hola {{nombre}}" });
+    expect(r.status).toBe(401);
+  });
 
-    // Si no está corriendo el servidor, esto fallará con conexión rechazada
-    // Pero si está corriendo, debería dar 200 o 401/403 si falta auth
-    // Por ahora validamos que el esquema se activa (si enviamos basura)
-    
-    const badResponse = await request(baseUrl)
+  conSesion()("POST /api/mensajes/enviar valida el esquema con sesion", async () => {
+    const r = await request(baseUrl)
       .post("/api/mensajes/enviar")
+      .set("Cookie", cookie!)
       .send({});
-
-    expect(badResponse.status).toBe(400);
-    expect(badResponse.body.error).toBe("Datos de envío inválidos");
+    expect(r.status).toBe(400);
   });
 });

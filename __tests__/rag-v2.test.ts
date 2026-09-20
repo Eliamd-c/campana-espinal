@@ -1,7 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-declare let describe: any;
-declare let test: any;
-declare let expect: any;
+import { describe, test, expect } from "vitest";
 
 import { buscarDocumentosUltra } from "@/lib/rag-hybrid-search-v2";
 import { validarPreguntaRAG } from "@/lib/rag-validator";

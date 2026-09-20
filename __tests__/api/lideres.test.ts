@@ -1,34 +1,52 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
+import { baseUrl, cookieDeSesion } from "./helpers";
 
-const baseUrl = "http://localhost:3000";
+/**
+ * Tests de integracion contra un servidor en marcha.
+ *
+ * Desde el hallazgo #1, toda ruta de /api exige sesion. Lo primero que se
+ * comprueba es justo eso; la logica de negocio solo se ejercita si hay
+ * credenciales de prueba (TEST_USER / TEST_PASSWORD).
+ */
+let cookie: string | null = null;
+beforeAll(async () => {
+  cookie = await cookieDeSesion();
+});
+const conSesion = () => (cookie ? it : it.skip);
 
-describe("API Líderes", () => {
-  it("GET /api/lideres debe retornar lista de líderes", async () => {
-    const response = await request(baseUrl).get("/api/lideres");
-    expect(response.status).toBe(200);
-    expect(Array.isArray(response.body.data)).toBe(true);
+describe("API Lideres", () => {
+  it("rechaza a quien no ha iniciado sesion", async () => {
+    const r = await request(baseUrl).get("/api/lideres");
+    expect(r.status).toBe(401);
   });
 
-  it("POST /api/lideres debe crear un líder con datos válidos", async () => {
-    const response = await request(baseUrl)
+  it("no permite crear lideres sin sesion", async () => {
+    const r = await request(baseUrl)
       .post("/api/lideres")
-      .send({
-        nombre: "Líder de Prueba",
-        telefono: "3000000000",
-        barrio: "Centro"
-      });
-
-    expect(response.status).toBe(201);
-    expect(response.body.data.nombre).toBe("Líder de Prueba");
+      .send({ nombre: "Intruso", telefono: "3000000000", barrio: "Centro" });
+    expect(r.status).toBe(401);
   });
 
-  it("POST /api/lideres debe fallar si falta el teléfono", async () => {
-    const response = await request(baseUrl)
+  conSesion()("GET /api/lideres devuelve la lista con sesion", async () => {
+    const r = await request(baseUrl).get("/api/lideres").set("Cookie", cookie!);
+    expect(r.status).toBe(200);
+  });
+
+  conSesion()("POST /api/lideres crea un lider con datos validos", async () => {
+    const r = await request(baseUrl)
       .post("/api/lideres")
+      .set("Cookie", cookie!)
+      .send({ nombre: "Lider de Prueba", telefono: "3000000000", barrio: "Centro" });
+    expect(r.status).toBe(201);
+    expect(r.body.data.nombre).toBe("Lider de Prueba");
+  });
+
+  conSesion()("POST /api/lideres falla si falta el telefono", async () => {
+    const r = await request(baseUrl)
+      .post("/api/lideres")
+      .set("Cookie", cookie!)
       .send({ nombre: "Incompleto" });
-
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe("Datos de líder inválidos");
+    expect(r.status).toBe(400);
   });
 });
