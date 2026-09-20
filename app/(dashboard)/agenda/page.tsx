@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock } from 'lucide-react';
+import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X } from 'lucide-react';
 
 export default function AgendaPage() {
   const [plantillas, setPlantillas] = useState<any[]>([]);
@@ -12,6 +12,10 @@ export default function AgendaPage() {
   const [textoIA, setTextoIA] = useState('');
   const [interpretando, setInterpretando] = useState(false);
   const [formAgenda, setFormAgenda] = useState({ plantilla_id: '', titulo: '', fecha_inicio: '' });
+
+  // Modal Plantilla states
+  const [mostrarModalPlantilla, setMostrarModalPlantilla] = useState(false);
+  const [nuevaPlantilla, setNuevaPlantilla] = useState({ nombre: '', descripcion: '', icono: '📝', campos: [] as any[] });
 
   useEffect(() => {
     fetch('/api/agenda/plantillas').then(r => r.json()).then(data => {
@@ -24,7 +28,6 @@ export default function AgendaPage() {
 
   const handleInterpretar = async () => {
     setInterpretando(true);
-    // Simular llamada al motor de IA para interpretación natural
     setTimeout(() => {
       setFormAgenda(prev => ({
         ...prev,
@@ -48,8 +51,26 @@ export default function AgendaPage() {
     });
   };
 
+  const guardarPlantilla = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await fetch('/api/agenda/plantillas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({...nuevaPlantilla, requiere_aprobacion: false, activa: true, recursos_sugeridos: []})
+    });
+    setMostrarModalPlantilla(false);
+    window.location.reload();
+  };
+
+  const agregarCampo = () => {
+    setNuevaPlantilla({
+      ...nuevaPlantilla, 
+      campos: [...nuevaPlantilla.campos, { clave: `campo_${nuevaPlantilla.campos.length + 1}`, etiqueta: '', tipo: 'texto_corto', requerido_para_confirmar: true }]
+    });
+  };
+
   const renderCalendario = () => {
-    const dias = Array.from({length: 35}, (_, i) => i + 1); // Mock month grid
+    const dias = Array.from({length: 35}, (_, i) => i + 1);
 
     return (
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
@@ -72,7 +93,6 @@ export default function AgendaPage() {
             </div>
           ))}
           {dias.map(d => {
-            // Find mock events for this day
             const eventosDia = agendamientos.filter(a => new Date(a.fecha_inicio).getDate() === (d % 30));
 
             return (
@@ -192,7 +212,10 @@ export default function AgendaPage() {
           </h2>
           <p className="text-slate-500 text-sm">Define el esquema y requisitos de diferentes tipos de eventos.</p>
         </div>
-        <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2">
+        <button 
+          onClick={() => setMostrarModalPlantilla(true)} 
+          className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-indigo-700 transition-colors"
+        >
           <Plus className="w-5 h-5" /> Nueva Plantilla
         </button>
       </div>
@@ -206,7 +229,7 @@ export default function AgendaPage() {
           plantillas.map(p => (
             <div key={p.id} className="border border-slate-200 rounded-lg p-5 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+                <div className="w-10 h-10 rounded bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xl">
                   {p.icono || p.nombre.charAt(0)}
                 </div>
                 <h3 className="font-bold text-lg text-slate-800">{p.nombre}</h3>
@@ -257,6 +280,89 @@ export default function AgendaPage() {
         {activeTab === 'agendar' && renderAgendar()}
         {activeTab === 'plantillas' && renderPlantillas()}
       </div>
+
+      {mostrarModalPlantilla && (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center p-6 border-b border-slate-100">
+              <h2 className="text-xl font-bold flex items-center gap-2"><Settings className="w-5 h-5 text-indigo-600"/> Nueva Plantilla</h2>
+              <button onClick={() => setMostrarModalPlantilla(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+            </div>
+            <form onSubmit={guardarPlantilla} className="p-6 space-y-4">
+              <div className="grid grid-cols-4 gap-4">
+                <div className="col-span-3">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Nombre de la plantilla</label>
+                  <input required type="text" className="w-full border border-slate-300 rounded-lg p-2.5" value={nuevaPlantilla.nombre} onChange={e => setNuevaPlantilla({...nuevaPlantilla, nombre: e.target.value})} placeholder="Ej: Reunión de barrio" />
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Icono (Emoji)</label>
+                  <input required type="text" className="w-full border border-slate-300 rounded-lg p-2.5 text-center" value={nuevaPlantilla.icono} onChange={e => setNuevaPlantilla({...nuevaPlantilla, icono: e.target.value})} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Descripción</label>
+                <textarea className="w-full border border-slate-300 rounded-lg p-2.5 resize-none h-20" value={nuevaPlantilla.descripcion} onChange={e => setNuevaPlantilla({...nuevaPlantilla, descripcion: e.target.value})} placeholder="Instrucciones para quien use esta plantilla..." />
+              </div>
+              
+              <div className="mt-6 pt-6 border-t border-slate-100">
+                <div className="flex justify-between items-center mb-4">
+                  <label className="block text-sm font-bold text-slate-800">Campos Dinámicos</label>
+                  <button type="button" onClick={agregarCampo} className="text-sm text-indigo-600 font-medium hover:text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-md flex items-center gap-1"><Plus className="w-4 h-4"/> Añadir campo</button>
+                </div>
+                
+                {nuevaPlantilla.campos.length === 0 ? (
+                  <p className="text-sm text-slate-500 bg-slate-50 p-4 rounded-lg text-center border border-dashed border-slate-200">No hay campos adicionales. Solo se pedirá título y fecha.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {nuevaPlantilla.campos.map((campo, index) => (
+                      <div key={index} className="flex gap-3 items-start bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        <div className="flex-1">
+                          <input required type="text" placeholder="Nombre del campo (ej: Dirección)" className="w-full border border-slate-300 rounded p-2 text-sm mb-2" value={campo.etiqueta} onChange={e => {
+                            const newCampos = [...nuevaPlantilla.campos];
+                            newCampos[index].etiqueta = e.target.value;
+                            newCampos[index].clave = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                            setNuevaPlantilla({...nuevaPlantilla, campos: newCampos});
+                          }}/>
+                          <div className="flex gap-4 items-center">
+                            <select className="border border-slate-300 rounded p-1.5 text-sm" value={campo.tipo} onChange={e => {
+                              const newCampos = [...nuevaPlantilla.campos];
+                              newCampos[index].tipo = e.target.value;
+                              setNuevaPlantilla({...nuevaPlantilla, campos: newCampos});
+                            }}>
+                              <option value="texto_corto">Texto Corto</option>
+                              <option value="texto_largo">Texto Largo</option>
+                              <option value="numero">Número</option>
+                              <option value="barrio">Barrio (Lista)</option>
+                            </select>
+                            <label className="flex items-center gap-2 text-sm text-slate-600">
+                              <input type="checkbox" checked={campo.requerido_para_confirmar} onChange={e => {
+                                const newCampos = [...nuevaPlantilla.campos];
+                                newCampos[index].requerido_para_confirmar = e.target.checked;
+                                setNuevaPlantilla({...nuevaPlantilla, campos: newCampos});
+                              }}/> Requerido confirmar
+                            </label>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => {
+                          const newCampos = nuevaPlantilla.campos.filter((_, i) => i !== index);
+                          setNuevaPlantilla({...nuevaPlantilla, campos: newCampos});
+                        }} className="text-red-500 hover:bg-red-50 p-2 rounded"><X className="w-4 h-4"/></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-6 mt-6 border-t border-slate-100 flex justify-end gap-3">
+                <button type="button" onClick={() => setMostrarModalPlantilla(false)} className="px-5 py-2.5 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">Cancelar</button>
+                <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 shadow-sm">
+                  <Save className="w-5 h-5" /> Crear Plantilla
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
