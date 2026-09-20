@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 /**
  * POST /api/mensajes/verificar
@@ -12,6 +14,10 @@ import prisma from "@/lib/db";
  */
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para ver campanas, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MENSAJES_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { cedulas = [], manuales = [] } = await req.json();
 
     // Calcular cédulas de los contactos manuales (igual que en /api/mensajes/enviar)

@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { redis } from "@/lib/ratelimit";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 const CACHE_TTL = 300; // 5 minutos para resultados frescos de campaña
 
 export async function GET(req: NextRequest) {
   try {
+    // Sin permiso para listar el padron, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.CONTACTOS_LISTAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const q = req.nextUrl.searchParams.get("q");
     if (!q || q.length < 2) {
       return NextResponse.json({ suggestions: [] });

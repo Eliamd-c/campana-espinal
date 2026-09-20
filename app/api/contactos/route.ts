@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
 import { limitarPagina, registrarAccesoADatos } from "@/lib/datos/acceso";
 import { handleError } from "@/lib/api/errors";
 import { Prisma } from "@prisma/client";
 import { invalidarCacheAlCrearContacto } from "@/lib/cache-strategies";
 import { z } from "zod";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +21,10 @@ const ContactoLocalSchema = z.object({
 
 export async function GET(req: NextRequest) {
   try {
+    // Sin permiso para listar el padron, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.CONTACTOS_LISTAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const searchParams = req.nextUrl.searchParams;
     const barrio = searchParams.get("barrio");
     let intencion_voto = searchParams.get("intencion_voto");
@@ -103,9 +107,8 @@ export async function GET(req: NextRequest) {
      * el contenido. Si un día se filtra el padrón, la diferencia entre saber
      * quién lo sacó y no saberlo está en esta línea.
      */
-    const sesion = await getServerSession(authOptions);
     await registrarAccesoADatos({
-      usuarioId: String((sesion?.user as any)?.id ?? "desconocido"),
+      usuarioId: permiso.quien.usuarioId,
       ruta: "/api/contactos",
       registros: contactos.length,
       filtros: { barrio, intencion_voto, puesto, buscando: Boolean(search) },
@@ -129,6 +132,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para capturar contactos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.CONTACTOS_CAPTURAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const body = await req.json();
     const parsed = ContactoLocalSchema.safeParse(body);
 

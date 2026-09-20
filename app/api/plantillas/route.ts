@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { handleError } from "@/lib/api/errors";
 import { PlantillaSchema } from "@/lib/validation";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export async function GET(req: NextRequest) {
   try {
+    // Sin permiso para ver campanas, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MENSAJES_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const plantillas = await prisma.plantillaMensaje.findMany({
       orderBy: { fecha_creada: 'desc' }
     });
@@ -16,6 +22,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para ver campanas, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MENSAJES_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const parsed = PlantillaSchema.safeParse(await req.json());
 
     if (!parsed.success) {
@@ -52,6 +62,10 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    // Sin permiso para ver campanas, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MENSAJES_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     

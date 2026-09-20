@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  // Sin permiso para ver campanas, no se pasa de aqui.
+  const permiso = await exigirPermiso(PERMISOS.MENSAJES_VER);
+  if (!permiso.ok) return permiso.respuesta;
+
   const campanaId = parseInt(params.id);
   
   try {

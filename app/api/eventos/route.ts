@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { FiltroEventosSchema, EventoSchema } from "@/lib/validation";
 import { handleError } from "@/lib/api/errors";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 // GET: Listar eventos
 export async function GET(req: NextRequest) {
   try {
+    // Sin permiso para ver la agenda, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.AGENDA_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const params = Object.fromEntries(req.nextUrl.searchParams);
     const parsed = FiltroEventosSchema.safeParse(params);
 
@@ -42,6 +48,10 @@ export async function GET(req: NextRequest) {
 // POST: Crear evento
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para crear eventos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.AGENDA_EDITAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const body = await req.json();
     const parsed = EventoSchema.safeParse(body);
 

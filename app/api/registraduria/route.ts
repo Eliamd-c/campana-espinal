@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 // POST /api/registraduria
 // Recibe: { cedula: string }
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para editar contactos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.CONTACTOS_EDITAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { cedula } = await req.json();
 
     if (!cedula) {

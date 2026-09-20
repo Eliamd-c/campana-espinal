@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para ver campanas, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MENSAJES_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const body = await req.json();
     const { nombre, categoria, bloques, descripcion } = body;
 
@@ -28,6 +34,10 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
+    // Sin permiso para ver campanas, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MENSAJES_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { searchParams } = new URL(req.url);
     const categoria = searchParams.get("categoria");
 

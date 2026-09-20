@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { getMetricasGlobales, getEstadisticasPuestos } from "@/lib/cache-strategies";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export async function GET() {
   try {
+    // Sin permiso para ver informes, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.INFORMES_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const metricas = await getMetricasGlobales();
     
     // Obtener los 3 puestos de votación con menos contactos (puestos críticos)

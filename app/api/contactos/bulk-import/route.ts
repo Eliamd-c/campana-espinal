@@ -3,6 +3,8 @@ import { bulkUpsertContactos } from "@/lib/bulk-operations";
 import { handleError } from "@/lib/api/errors";
 import { checkRateLimit, rateLimiters } from "@/lib/ratelimit";
 import { invalidarTodoDashboard } from "@/lib/cache-strategies";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +14,10 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para capturar contactos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.CONTACTOS_CAPTURAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     // 1. Rate limiting
     const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
     const { success } = await checkRateLimit(rateLimiters.api, ip, "api");

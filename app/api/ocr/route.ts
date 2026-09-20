@@ -5,6 +5,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { AVISO_CONTENIDO_EXTERNO } from "@/lib/ia/sanitizar";
 import { logger } from "@/lib/logger";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 const apiKey = process.env.GEMINI_API_KEY;
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
@@ -14,6 +16,10 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
+    // Sin permiso para capturar contactos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.CONTACTOS_CAPTURAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     if (!genAI) {
       return NextResponse.json({ error: "La API Key de Gemini no está configurada." }, { status: 500 });
     }

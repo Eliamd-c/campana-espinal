@@ -6,11 +6,17 @@ import { crearPromptRAGEstrict } from "@/lib/rag-prompts-v2";
 import { validarRespuestaRAG, obtenerRecomendacion } from "@/lib/rag-post-validator";
 import { traceAICall, traceBDOperation } from "@/lib/tracing-helpers";
 import { logger } from "@/lib/logger";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  // Sin permiso para usar el asistente, no se pasa de aqui.
+  const permiso = await exigirPermiso(PERMISOS.IA_CONSULTAR);
+  if (!permiso.ok) return permiso.respuesta;
+
   const inicio = Date.now();
 
   try {

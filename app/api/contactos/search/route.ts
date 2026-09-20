@@ -3,6 +3,8 @@ import prisma from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { handleError } from "@/lib/api/errors";
 import { z } from "zod";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 const SearchSchema = z.object({
   q: z.string().min(2).max(100),
@@ -18,6 +20,10 @@ const SearchSchema = z.object({
  * - Paginación y límites seguros
  */
 export async function GET(req: NextRequest) {
+  // Sin permiso para listar el padron, no se pasa de aqui.
+  const permiso = await exigirPermiso(PERMISOS.CONTACTOS_LISTAR);
+  if (!permiso.ok) return permiso.respuesta;
+
   const startTime = Date.now();
   try {
     const params = Object.fromEntries(req.nextUrl.searchParams);

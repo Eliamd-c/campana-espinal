@@ -7,12 +7,18 @@ import { logger } from "@/lib/logger";
 import { getHistorialOptimizado, comprimirHistorialChat } from "@/lib/chat-compression";
 import { ejecutarRAG, ejecutarRAGStream } from "@/lib/rag-executor";
 import { traceBDOperation, traceAICall } from "@/lib/tracing-helpers";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 // ═══════════════════════════════════════════════════════════════
 // POST /api/ia/analisis
 // ═══════════════════════════════════════════════════════════════
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para usar el asistente, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.IA_CONSULTAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { tipo, liderId, contextoMensaje, preguntaAnalista, sesionId, stream } = await req.json();
 
     // ── MODO EVALUAR LÍDER ─────────────────────────────────────

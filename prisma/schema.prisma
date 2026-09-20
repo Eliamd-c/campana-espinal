@@ -58,6 +58,12 @@ model User {
   /// echaba del panel hasta que su token caducara.
   tokenVersion  Int       @default(0) @map("token_version")
 
+  /// Lo que esta cuenta puede hacer, del catalogo de lib/permisos.ts. Vacio
+  /// por defecto: una cuenta nueva entra y no ve nada hasta que se le concede
+  /// algo explicitamente. El campo `role` de arriba ya no decide accesos; se
+  /// conserva por compatibilidad con lo que hubiera guardado.
+  permisos      String[]  @default([])
+
   accounts      Account[]
   sessions      Session[]
 }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getEmbeddingCacheStats, limpiarEmbeddingCache } from "@/lib/embedding-cache";
 import { handleError } from "@/lib/api/errors";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +12,10 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
+    // Sin permiso para usar el asistente, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.IA_CONSULTAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const stats = await getEmbeddingCacheStats();
     return NextResponse.json({ data: stats });
   } catch (error) {

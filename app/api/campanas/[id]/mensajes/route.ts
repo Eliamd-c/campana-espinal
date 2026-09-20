@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { handleError } from "@/lib/api/errors";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 // GET /api/campanas/[id]/mensajes
 export async function GET(
@@ -8,6 +10,10 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Sin permiso para ver campanas, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MENSAJES_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const campanaId = parseInt(params.id, 10);
     if (isNaN(campanaId)) {
       return NextResponse.json({ error: "ID de campaña inválido" }, { status: 400 });

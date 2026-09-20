@@ -1,4 +1,5 @@
 import prisma from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import { logger } from "@/lib/logger";
 
 /**
@@ -75,7 +76,7 @@ export async function registrarAccesoADatos(acceso: AccesoADatos): Promise<void>
           ruta: acceso.ruta,
           registros: acceso.registros,
           filtros: acceso.filtros ?? {},
-        },
+        } as Prisma.InputJsonValue,
       },
     });
   } catch (error) {

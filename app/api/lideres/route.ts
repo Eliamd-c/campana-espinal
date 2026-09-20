@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { FiltroLideresSchema, LiderSchema } from "@/lib/validation";
 import { handleError } from "@/lib/api/errors";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 // GET /api/lideres
 export async function GET(req: NextRequest) {
   try {
+    // Sin permiso para ver lideres, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.LIDERES_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const params = Object.fromEntries(req.nextUrl.searchParams);
     const parsed = FiltroLideresSchema.safeParse(params);
 
@@ -43,6 +49,10 @@ export async function GET(req: NextRequest) {
 // POST /api/lideres
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para crear lideres, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.LIDERES_EDITAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const body = await req.json();
     const parsed = LiderSchema.safeParse(body);
 

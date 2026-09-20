@@ -11,6 +11,8 @@ import {
   normalizarUsuario,
   revisarFortaleza,
 } from "@/lib/usuarios";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS, depurarPermisos } from "@/lib/permisos";
 
 /**
  * Gestión de usuarios del panel, solo para administradores.
@@ -21,15 +23,15 @@ import {
  * imposible y tampoco se sabía quién hacía qué.
  */
 
+/**
+ * Gestionar cuentas exige el permiso correspondiente, no un rol. Quien lo
+ * tenga controla quien entra al sistema, asi que en la practica se concede
+ * solo a la cuenta del desarrollador.
+ */
 async function exigirAdmin() {
-  const session = await getServerSession(authOptions);
-  const usuario = session?.user as any;
-
-  if (!usuario?.id) return { error: NextResponse.json({ error: "No autenticado" }, { status: 401 }) };
-  if (usuario.role !== "admin") {
-    return { error: NextResponse.json({ error: "Se requiere rol de administrador" }, { status: 403 }) };
-  }
-  return { idAdmin: usuario.id as string };
+  const permiso = await exigirPermiso(PERMISOS.USUARIOS_GESTIONAR);
+  if (!permiso.ok) return { error: permiso.respuesta };
+  return { idAdmin: permiso.quien.usuarioId };
 }
 
 /** GET: lista de usuarios. Nunca incluye hashes de contraseña. */
@@ -45,6 +47,7 @@ export async function GET() {
       role: true,
       activo: true,
       ultimoAcceso: true,
+      permisos: true,
     },
     orderBy: { username: "asc" },
   });
@@ -57,6 +60,12 @@ const AltaSchema = z.object({
   nombre: z.string().max(120).optional(),
   rol: z.enum(ROLES),
   password: z.string().min(1, "La contraseña es obligatoria").max(200),
+  /**
+   * Lo que podrá hacer esta cuenta. Si no se marca nada, entra y no ve nada:
+   * es el valor por defecto a propósito, para que conceder acceso sea siempre
+   * un acto deliberado.
+   */
+  permisos: z.array(z.string()).optional().default([]),
 });
 
 /** POST: alta de un usuario nuevo. */
@@ -101,8 +110,10 @@ export async function POST(req: NextRequest) {
         role: parsed.data.rol,
         passwordHash: await bcrypt.hash(parsed.data.password, COSTE_BCRYPT),
         activo: true,
+        // Se filtran contra el catalogo: lo que llegue inventado se descarta.
+        permisos: depurarPermisos(parsed.data.permisos),
       },
-      select: { id: true, username: true, role: true, activo: true },
+      select: { id: true, username: true, role: true, activo: true, permisos: true },
     });
 
     await prisma.auditoria
@@ -112,7 +123,11 @@ export async function POST(req: NextRequest) {
           registro_id: creado.id,
           accion: "alta",
           usuario_id: control.idAdmin,
-          datos_despues: { username, rol: parsed.data.rol },
+          datos_despues: {
+            username,
+            rol: parsed.data.rol,
+            permisos: depurarPermisos(parsed.data.permisos),
+          },
         },
       })
       .catch(() => {});

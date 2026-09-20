@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    // Sin permiso para ver la agenda, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.AGENDA_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const evento = await prisma.evento.findUnique({
       where: { id: params.id },
       include: {
@@ -24,6 +30,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    // Sin permiso para editar eventos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.AGENDA_EDITAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const body = await req.json();
     const updateData: any = {};
 
@@ -64,6 +74,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    // Sin permiso para borrar eventos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.AGENDA_EDITAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     // Verificar si existe y si está en borrador o pendiente
     const evento = await prisma.evento.findUnique({
       where: { id: params.id },

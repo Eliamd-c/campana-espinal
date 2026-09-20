@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { recalcularScoreLider } from "@/lib/score";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 // GET /api/reuniones
 export async function GET(req: NextRequest) {
   try {
+    // Sin permiso para ver la agenda, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.AGENDA_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const reuniones = await prisma.reunion.findMany({
       orderBy: { fecha: "desc" },
       include: {
@@ -22,6 +28,10 @@ export async function GET(req: NextRequest) {
 // POST /api/reuniones
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para crear reuniones, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.AGENDA_EDITAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const body = await req.json();
     const { titulo, fecha, lugar, lider_id, asistentes } = body;
 

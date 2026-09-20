@@ -3,9 +3,15 @@ import prisma from "@/lib/db";
 import { handleError } from "@/lib/api/errors";
 import { checkRateLimit, rateLimiters } from "@/lib/ratelimit";
 import { schemaEnviarCampana } from "@/lib/validation";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para enviar mensajes, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MENSAJES_ENVIAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     // 1. Rate limiting
     const ip = req.ip || req.headers.get("x-forwarded-for") || "unknown";
     const { success } = await checkRateLimit(rateLimiters.sendMessage, ip, "sendMessage");

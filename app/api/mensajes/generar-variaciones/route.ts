@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { generarAnalisis } from "@/lib/gemini";
 import { handleError } from "@/lib/api/errors";
 import { envolverNoConfiable, AVISO_CONTENIDO_EXTERNO } from "@/lib/ia/sanitizar";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para ver campanas, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MENSAJES_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { texto } = await req.json();
 
     if (!texto || texto.trim() === "") {

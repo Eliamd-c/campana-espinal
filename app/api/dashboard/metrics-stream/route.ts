@@ -1,10 +1,16 @@
 import { NextRequest } from "next/server";
 import { getMetricasGlobales, getTopLideres, getEstadisticasCampanas, getEstadisticasPuestos } from "@/lib/cache-strategies";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  // Sin permiso para ver informes, no se pasa de aqui.
+  const permiso = await exigirPermiso(PERMISOS.INFORMES_VER);
+  if (!permiso.ok) return permiso.respuesta;
+
   const encoder = new TextEncoder();
   let cancelled = false;
 

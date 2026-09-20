@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardarDocumento, listarDocumentos, eliminarDocumento, dividirEnFragmentos } from "@/lib/embeddings";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 // GET — Listar todos los documentos
 export async function GET() {
   try {
+    // Sin permiso para usar el asistente, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.IA_CONSULTAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const docs = await listarDocumentos();
     return NextResponse.json({ data: docs });
   } catch (error: any) {
@@ -14,6 +20,10 @@ export async function GET() {
 // POST — Subir y vectorizar un documento nuevo
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para usar el asistente, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.IA_CONSULTAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { titulo, contenido, categoria, metadata } = await req.json();
 
     if (!titulo || !contenido) {

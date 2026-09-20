@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { handleError } from "@/lib/api/errors";
 import { z } from "zod";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 const ReorderSchema = z.object({
   items: z.array(z.object({
@@ -17,6 +19,10 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  // Sin permiso para editar eventos, no se pasa de aqui.
+  const permiso = await exigirPermiso(PERMISOS.AGENDA_EDITAR);
+  if (!permiso.ok) return permiso.respuesta;
+
   try {
     const { id } = params;
     const body = await req.json();

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { handleError } from "@/lib/api/errors";
 import { invalidarTodoDashboard } from "@/lib/cache-strategies";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 /**
  * Acciones masivas sobre contactos
@@ -10,6 +12,10 @@ import { invalidarTodoDashboard } from "@/lib/cache-strategies";
  */
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para editar contactos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.CONTACTOS_EDITAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { action, ids, data } = await req.json();
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) {

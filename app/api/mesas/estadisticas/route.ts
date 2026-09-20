@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { handleError } from "@/lib/api/errors";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export async function GET(req: NextRequest) {
   try {
+    // Sin permiso para ver mesas, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MESAS_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     // Agrupar contactos por puesto y mesa
     const stats = await prisma.contacto.groupBy({
       by: ["puesto_votacion", "mesa_numero"],

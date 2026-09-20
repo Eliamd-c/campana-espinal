@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { traceBDOperation } from "@/lib/tracing-helpers";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
+    // Sin permiso para usar el asistente, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.IA_CONSULTAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const diasAtras = parseInt(req.nextUrl.searchParams.get("dias") || "7");
 
     const fechaInicio = new Date();

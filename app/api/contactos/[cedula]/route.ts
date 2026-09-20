@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { handleError, notFound } from "@/lib/api/errors";
 import { invalidarCacheAlCrearContacto } from "@/lib/cache-strategies";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { cedula: string } }
 ) {
   try {
+    // Sin permiso para ver una ficha, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.CONTACTOS_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { cedula } = params;
 
     const contacto = await prisma.contacto.findUnique({
@@ -38,6 +44,10 @@ export async function PUT(
   { params }: { params: { cedula: string } }
 ) {
   try {
+    // Sin permiso para editar contactos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.CONTACTOS_EDITAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { cedula } = params;
     const body = await req.json();
     

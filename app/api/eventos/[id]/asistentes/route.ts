@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { handleError, notFound } from "@/lib/api/errors";
 import { z } from "zod";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 const AsistenteSchema = z.object({
   cedula: z.string().min(7).max(12),
@@ -13,6 +15,10 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Sin permiso para ver la agenda, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.AGENDA_VER);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { id } = params;
 
     const asistentes = await prisma.asistenteEvento.findMany({
@@ -37,6 +43,10 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Sin permiso para editar eventos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.AGENDA_EDITAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     const { id } = params;
     const body = await req.json();
     const parsed = AsistenteSchema.safeParse(body);

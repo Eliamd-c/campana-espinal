@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
 import { randomUUID } from "node:crypto";
-import { authOptions } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import {
   BUCKET,
@@ -9,6 +7,8 @@ import {
   clienteDeServicio,
   reconocerMedio,
 } from "@/lib/media";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +24,9 @@ const VALIDEZ_ENLACE = 7 * 24 * 60 * 60;
  */
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!(session?.user as any)?.id) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
+    // Sin permiso para ver campanas, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.MENSAJES_VER);
+    if (!permiso.ok) return permiso.respuesta;
 
     const formulario = await req.formData();
     const archivo = formulario.get("archivo");

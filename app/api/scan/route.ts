@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, rateLimiters } from "@/lib/ratelimit";
 import { ScanSchema } from "@/lib/validation";
 import { handleError } from "@/lib/api/errors";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
 
 // POST /api/scan
 export async function POST(req: NextRequest) {
   try {
+    // Sin permiso para capturar contactos, no se pasa de aqui.
+    const permiso = await exigirPermiso(PERMISOS.CONTACTOS_CAPTURAR);
+    if (!permiso.ok) return permiso.respuesta;
+
     // ✅ Rate Limiting
     const ip = req.ip || "unknown";
     const { success, remaining } = await checkRateLimit(rateLimiters.scan, ip, "scan");
