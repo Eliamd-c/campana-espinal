@@ -1,9 +1,25 @@
 const { Client } = require('pg');
+require('dotenv').config();
+
+/**
+ * La cadena de conexion se toma SIEMPRE del entorno. Antes habia una
+ * hardcodeada aqui, con su contrasena, en un repositorio publico.
+ */
+function exigirConexion() {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.error(
+      'Falta DATABASE_URL. Definela en el entorno antes de ejecutar este script.
+' +
+      'Nunca escribas la cadena de conexion en el codigo: este fichero es publico.'
+    );
+    process.exit(1);
+  }
+  return url;
+}
 
 async function setup() {
-  const client = new Client({
-    connectionString: 'postgresql://postgres:SECRETO-ELIMINADO@db.oizjzperhtadylqwdqve.supabase.co:5432/postgres'
-  });
+  const client = new Client({ connectionString: exigirConexion() });
 
   await client.connect();
   console.log('Conectado a Supabase...');

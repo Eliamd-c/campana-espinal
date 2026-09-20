@@ -57,3 +57,14 @@ bot/sessions/
 *proxies.txt
 Webshare 100 proxies.txt
 _bot_apagado/
+
+# Exportaciones con datos de votantes (el filtro *.csv ya las cubre, pero la
+# carpeta entera se ignora por si algun dia se exporta en otro formato)
+exports/
+
+# Copias de seguridad de la base: contienen el padron y las credenciales de
+# las lineas de WhatsApp
+*.backup
+*.backup.gz
+*.dump
+*.sql.gz
