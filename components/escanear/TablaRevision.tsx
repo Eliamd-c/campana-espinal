@@ -16,29 +16,51 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
   const [errores, setErrores] = useState<Record<number, string>>({});
   const [duplicados, setDuplicados] = useState<Record<number, any>>({});
 
-  // Verificar duplicados cuando cambian los registros
+  /**
+   * Comprueba en una sola petición cuáles de las cédulas leídas ya están en
+   * el padrón. Antes se pedía la ficha completa de cada fila por separado, y
+   * se relanzaba la tanda entera con cada tecla que el usuario tocara.
+   */
   useEffect(() => {
-    const checkAll = async () => {
-      const newDuplicados: Record<number, any> = {};
-      for (let i = 0; i < registros.length; i++) {
-        const cedula = registros[i].cedula.valor;
-        if (cedula && cedula.length >= 7) {
-          try {
-            const res = await fetch(`/api/contactos/${cedula}`);
-            if (res.ok) {
-              const { data } = await res.ok ? await res.json() : { data: null };
-              if (data) newDuplicados[i] = data;
-            }
-          } catch (e) {
-            // Ignorar errores de red en la pre-verificación
-          }
-        }
+    let cancelado = false;
+
+    const comprobar = async () => {
+      const cedulas = registros
+        .map((r) => r.cedula.valor)
+        .filter((c) => /^\d{7,12}$/.test(c));
+
+      if (cedulas.length === 0) {
+        if (!cancelado) setDuplicados({});
+        return;
       }
-      setDuplicados(newDuplicados);
+
+      try {
+        const res = await fetch("/api/contactos/comprobar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cedulas }),
+        });
+        if (!res.ok) return;
+
+        const { data } = await res.json();
+        if (cancelado || !data) return;
+
+        const nuevos: Record<number, any> = {};
+        registros.forEach((r, i) => {
+          const encontrado = data[r.cedula.valor];
+          if (encontrado) nuevos[i] = encontrado;
+        });
+        setDuplicados(nuevos);
+      } catch {
+        // Ignorar errores de red en la pre-verificación
+      }
     };
 
-    const timer = setTimeout(checkAll, 1000); // Debounce
-    return () => clearTimeout(timer);
+    const timer = setTimeout(comprobar, 1000); // Debounce
+    return () => {
+      cancelado = true;
+      clearTimeout(timer);
+    };
   }, [registros]);
 
   const actualizar = (idx: number, campo: keyof RegistroEscaneado, valor: string) => {

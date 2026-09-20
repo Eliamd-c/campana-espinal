@@ -7,6 +7,52 @@ interface CamaraProps {
   onCaptura: (imagenUrl: string) => void;
 }
 
+/**
+ * Ancho máximo al que se reduce la imagen antes de mandarla al OCR.
+ *
+ * Un móvil actual saca fotos de 8–12 MP: como data URL son varios MB que
+ * tardan en subir por red móvil, agotan el tiempo de la ruta y gastan cuota
+ * de más, sin leerse mejor. A 1600 px de ancho una planilla escrita a mano
+ * sigue siendo legible de sobra para el modelo.
+ */
+const ANCHO_MAXIMO = 1600;
+const CALIDAD_JPEG = 0.85;
+
+/**
+ * Reduce un data URL de imagen si excede ANCHO_MAXIMO. Si algo falla
+ * (formato raro, imagen que el navegador no decodifica) se devuelve el
+ * original: peor es quedarse sin captura.
+ */
+function reducirImagen(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+
+    img.onload = () => {
+      if (img.width <= ANCHO_MAXIMO) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const escala = ANCHO_MAXIMO / img.width;
+      const lienzo = document.createElement("canvas");
+      lienzo.width = ANCHO_MAXIMO;
+      lienzo.height = Math.round(img.height * escala);
+
+      const ctx = lienzo.getContext("2d");
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
+      resolve(lienzo.toDataURL("image/jpeg", CALIDAD_JPEG));
+    };
+
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 export function Camara({ onCaptura }: CamaraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -50,7 +96,7 @@ export function Camara({ onCaptura }: CamaraProps) {
     setActiva(false);
   }, []);
 
-  const capturar = useCallback(() => {
+  const capturar = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -58,17 +104,29 @@ export function Camara({ onCaptura }: CamaraProps) {
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     ctx?.drawImage(video, 0, 0);
-    const imagenUrl = canvas.toDataURL("image/jpeg", 0.95);
+    const imagenUrl = canvas.toDataURL("image/jpeg", CALIDAD_JPEG);
     detenerCamara();
-    onCaptura(imagenUrl);
+    onCaptura(await reducirImagen(imagenUrl));
   }, [detenerCamara, onCaptura]);
 
   const manejarArchivo = (e: React.ChangeEvent<HTMLInputElement>) => {
     const archivo = e.target.files?.[0];
     if (!archivo) return;
+
+    // El servidor solo acepta png, jpg y webp; avisar aquí evita un viaje
+    // de varios MB para recibir un 400.
+    if (!/^image\/(png|jpe?g|webp)$/.test(archivo.type)) {
+      setError("Formato no admitido. Sube una foto en JPG, PNG o WEBP.");
+      e.target.value = "";
+      return;
+    }
+
+    setError("");
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      if (ev.target?.result) onCaptura(ev.target.result as string);
+    reader.onload = async (ev) => {
+      if (ev.target?.result) {
+        onCaptura(await reducirImagen(ev.target.result as string));
+      }
     };
     reader.readAsDataURL(archivo);
   };
@@ -167,7 +225,7 @@ export function Camara({ onCaptura }: CamaraProps) {
               <Upload className="w-8 h-8" />
             </div>
             <span>Subir desde la Galería</span>
-            <input type="file" accept="image/*" className="hidden" onChange={manejarArchivo} />
+            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={manejarArchivo} />
           </label>
         </div>
       )}

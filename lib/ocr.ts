@@ -14,6 +14,25 @@ export interface RegistroEscaneado {
 }
 
 /**
+ * Si el servidor no manda confianza para un campo, se asume dudosa. Antes
+ * aquí se ponía 95 fijo a todo: la tabla de revisión marca en amarillo lo que
+ * baja de 85, así que nunca se marcaba nada y el aviso de "revisa esto" era
+ * decorativo. Más vale mandar a revisar de más que colar un error al padrón.
+ */
+const CONFIANZA_DUDOSA = 60;
+
+function aCampo(valor: unknown, confianza: unknown): CampoOCR {
+  const texto = typeof valor === "string" ? valor : "";
+  const numero = typeof confianza === "number" && Number.isFinite(confianza) ? confianza : CONFIANZA_DUDOSA;
+
+  return {
+    valor: texto,
+    // Un campo vacío no es una lectura fiable: es una casilla sin leer.
+    confianza: texto ? Math.min(100, Math.max(0, Math.round(numero))) : 0,
+  };
+}
+
+/**
  * Procesa una imagen enviándola a la API del servidor (Gemini 1.5 Flash)
  * y extrae los campos de la planilla.
  */
@@ -21,7 +40,7 @@ export async function procesarPlanilla(
   imagenUrl: string,
   onProgress?: (progress: number) => void
 ): Promise<RegistroEscaneado[]> {
-  
+
   // Simulamos un progreso inicial para mantener la experiencia de usuario
   if (onProgress) {
     onProgress(20);
@@ -46,16 +65,19 @@ export async function procesarPlanilla(
 
     if (onProgress) onProgress(100);
 
-    // Mapeamos los datos limpios que trae Gemini al formato interno de la UI
-    // Asignamos una confianza alta por defecto porque Gemini es muy preciso.
+    // Mapeamos los datos limpios que trae Gemini al formato interno de la UI,
+    // conservando la confianza que el modelo declaró para cada casilla.
     const resultadosBrutos: any[] = json.data || [];
-    
-    const registros: RegistroEscaneado[] = resultadosBrutos.map((r) => ({
-      cedula: { valor: r.cedula || "", confianza: 95 },
-      nombre: { valor: r.nombre || "", confianza: 95 },
-      telefono: { valor: r.telefono || "", confianza: 95 },
-      barrio: { valor: r.barrio || "", confianza: 90 },
-    }));
+
+    const registros: RegistroEscaneado[] = resultadosBrutos.map((r) => {
+      const c = r?.confianza ?? {};
+      return {
+        cedula: aCampo(r?.cedula, c.cedula),
+        nombre: aCampo(r?.nombre, c.nombre),
+        telefono: aCampo(r?.telefono, c.telefono),
+        barrio: aCampo(r?.barrio, c.barrio),
+      };
+    });
 
     return registros;
   } catch (error) {

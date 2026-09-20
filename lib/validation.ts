@@ -130,3 +130,25 @@ export const PlantillaSchema = z.object({
   categoria: z.string().max(40).default("general"),
   texto: z.string().min(1, "El texto no puede estar vacío").max(4096),
 });
+
+/**
+ * Imagen de planilla que entra en `/api/ocr`.
+ *
+ * Antes esta ruta aceptaba cualquier data URL cuyo mimetype casara con un
+ * regex suelto y sin tope de tamaño: una foto de 12 MB de un móvil moderno
+ * llegaba entera a Gemini, agotaba el tiempo de la ruta y gastaba cuota.
+ * Aquí se acota lo mismo que en `ScanSchema`: formatos que Gemini entiende y
+ * un tope de bytes. El cliente reduce la foto antes de enviarla, así que
+ * 6 MB de data URL es holgado para una planilla legible.
+ */
+export const MAX_BYTES_IMAGEN_OCR = 6_000_000;
+
+export const ImagenPlanillaSchema = z.object({
+  imagenUrl: z
+    .string()
+    .regex(
+      /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=\s]+$/,
+      "La imagen debe ser un data URL de imagen (png, jpg o webp)"
+    )
+    .max(MAX_BYTES_IMAGEN_OCR, "La imagen supera el tamaño admitido"),
+});
