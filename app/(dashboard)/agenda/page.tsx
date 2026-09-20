@@ -17,12 +17,18 @@ export default function AgendaPage() {
   const [mostrarModalPlantilla, setMostrarModalPlantilla] = useState(false);
   const [nuevaPlantilla, setNuevaPlantilla] = useState({ nombre: '', descripcion: '', icono: '📝', campos: [] as any[] });
 
+  // Config states
+  const [config, setConfig] = useState<any>({ PROVEEDOR_IA: 'gemini', OPENAI_API_KEY: '', GEMINI_API_KEY: '' });
+
   useEffect(() => {
     fetch('/api/agenda/plantillas').then(r => r.json()).then(data => {
       if(Array.isArray(data)) setPlantillas(data);
     });
     fetch('/api/agenda').then(r => r.json()).then(data => {
       if(Array.isArray(data)) setAgendamientos(data);
+    });
+    fetch('/api/configuracion').then(r => r.json()).then(data => {
+      if(data && !data.error) setConfig(data);
     });
   }, []);
 
@@ -320,19 +326,19 @@ export default function AgendaPage() {
             }} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Proveedor de IA Principal</label>
-                <select name="proveedor" className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50">
+                <select name="proveedor" className="w-full border border-slate-300 rounded-lg p-3 bg-slate-50" value={config.PROVEEDOR_IA || 'gemini'} onChange={e => setConfig({...config, PROVEEDOR_IA: e.target.value})}>
                   <option value="gemini">Google Gemini (Recomendado)</option>
                   <option value="openai">OpenAI ChatGPT</option>
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Clave de API de OpenAI (ChatGPT)</label>
-                <input name="openai_key" type="password" placeholder="sk-..." className="w-full border border-slate-300 rounded-lg p-3" />
+                <input name="openai_key" type="password" placeholder="sk-..." className="w-full border border-slate-300 rounded-lg p-3" value={config.OPENAI_API_KEY || ''} onChange={e => setConfig({...config, OPENAI_API_KEY: e.target.value})} />
                 <p className="text-xs text-slate-500 mt-1">Solo necesaria si seleccionaste OpenAI. Puedes dejarla en blanco para usar la variable de entorno .env</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Clave de API de Google Gemini</label>
-                <input name="gemini_key" type="password" placeholder="AIzaSy..." className="w-full border border-slate-300 rounded-lg p-3" />
+                <input name="gemini_key" type="password" placeholder="AIzaSy..." className="w-full border border-slate-300 rounded-lg p-3" value={config.GEMINI_API_KEY || ''} onChange={e => setConfig({...config, GEMINI_API_KEY: e.target.value})} />
                 <p className="text-xs text-slate-500 mt-1">Solo necesaria si seleccionaste Gemini. Puedes dejarla en blanco para usar la variable de entorno .env</p>
               </div>
               <div className="pt-4 mt-4 border-t border-slate-100 flex justify-end">
