@@ -60,6 +60,12 @@ export const PERMISOS = {
   AUDITORIA_VER: "auditoria.ver",
   /** Ver y cambiar las claves de API y ajustes del sistema. */
   CONFIGURACION_GESTIONAR: "configuracion.gestionar",
+  /**
+   * Vincular y desvincular las líneas de WhatsApp. Va aparte de la
+   * mensajería masiva porque no es lo mismo redactar un envío que escanear
+   * el código que pone el número de la campaña bajo control del sistema.
+   */
+  WHATSAPP_GESTIONAR: "whatsapp.gestionar",
 } as const;
 
 export type Permiso = (typeof PERMISOS)[keyof typeof PERMISOS];
@@ -157,6 +163,12 @@ export const GRUPOS_DE_PERMISOS: {
         permiso: PERMISOS.CONFIGURACION_GESTIONAR,
         etiqueta: "Configurar claves de API del sistema",
         advertencia: "Permite cambiar las claves de los servicios de IA, que se facturan por uso.",
+      },
+      {
+        permiso: PERMISOS.WHATSAPP_GESTIONAR,
+        etiqueta: "Vincular y desvincular las líneas de WhatsApp",
+        advertencia:
+          "Quien escanea el código conecta el número de la campaña al sistema, y quien desvincula lo deja mudo.",
       },
     ],
   },

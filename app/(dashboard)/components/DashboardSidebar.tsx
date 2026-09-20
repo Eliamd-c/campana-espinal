@@ -12,6 +12,7 @@ const navigation = [
   { name: "Agenda", href: "/agenda", icon: "📅" },
   { name: "Líderes", href: "/lideres", icon: "⭐" },
   { name: "Mensajes", href: "/mensajes", icon: "💬" },
+  { name: "Líneas WhatsApp", href: "/lineas", icon: "📱" },
   { name: "Mesas", href: "/mesas", icon: "🗳️" },
   { name: "Enlaces", href: "/enlaces", icon: "🔗" },
   { name: "Inteligencia IA", href: "/ia", icon: "✨" },
