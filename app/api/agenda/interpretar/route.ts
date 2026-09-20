@@ -2,11 +2,9 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { exigirPermiso } from "@/lib/auth/permisos-ruta";
 import { PERMISOS } from "@/lib/permisos";
-import { obtenerConfig } from "@/lib/configuracion";
 import { logger } from "@/lib/logger";
 import {
   envolverNoConfiable,
@@ -15,6 +13,7 @@ import {
   elegirDeListaCerrada,
 } from "@/lib/ia/sanitizar";
 import prisma from "@/lib/db";
+import { generarConIA, ErrorIA } from "@/lib/ia/generar";
 
 /**
  * Convierte un texto escrito a mano en los datos de un agendamiento.
@@ -137,8 +136,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const proveedor = (await obtenerConfig("PROVEEDOR_IA")) ?? "gemini";
-
     /**
      * Las plantillas activas se le ofrecen al modelo como lista cerrada. Sin
      * esto, la interfaz prometía «deja que la IA asigne» y siempre devolvía el
@@ -152,65 +149,35 @@ export async function POST(req: NextRequest) {
 
     const prompt = construirPrompt(texto, plantillas.map((p) => p.nombre));
 
+    /**
+     * Quién atiende la petición lo decide la configuración, y si ese
+     * proveedor se quedó sin crédito la capa de IA pasa al otro sola. Antes
+     * esta rama estaba escrita a mano aquí dentro y sin relevo: con Gemini
+     * agotado, la agenda dejaba de interpretar aunque hubiera clave de
+     * OpenAI puesta.
+     */
     let respuestaCruda: string;
+    let proveedor: string;
 
-    if (proveedor === "openai") {
-      const clave = await obtenerConfig("OPENAI_API_KEY");
-      if (!clave) {
-        return NextResponse.json(
-          { error: "Falta configurar la clave de OpenAI.", codigo: "SIN_CLAVE" },
-          { status: 503 }
-        );
-      }
-
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${clave}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          // Sin esto, el mismo texto daba listas de recursos distintas en
-          // cada intento: una vez cinco, la siguiente dos. Un recurso que se
-          // pierde en silencio es una tarima que nadie lleva.
-          temperature: 0,
-          response_format: { type: "json_object" },
-          messages: [{ role: "user", content: prompt }],
-        }),
+    try {
+      const respuesta = await generarConIA({
+        modulo: "agenda",
+        prompt,
+        json: true,
       });
-
-      const datos = await res.json();
-
-      if (!res.ok || datos.error) {
-        // El detalle se queda en el registro: un error de la API puede
-        // incluir fragmentos del prompt o de la clave.
-        logger.error("[agenda] Error de OpenAI", { detalle: datos?.error?.message });
+      respuestaCruda = respuesta.texto;
+      // Se registra quién atendió: si el relevo salta a menudo, es señal de
+      // que al proveedor preferido hay que recargarle crédito.
+      proveedor = respuesta.proveedor;
+    } catch (error) {
+      if (error instanceof ErrorIA) {
+        logger.warn("[agenda] No se pudo usar ningun proveedor de IA", { codigo: error.codigo });
         return NextResponse.json(
-          { error: "El servicio de IA no respondió correctamente." },
-          { status: 502 }
+          { error: error.message, codigo: error.codigo },
+          { status: error.codigo === "SIN_CLAVE" ? 503 : 502 }
         );
       }
-
-      respuestaCruda = datos.choices?.[0]?.message?.content ?? "";
-    } else {
-      const clave = await obtenerConfig("GEMINI_API_KEY");
-      if (!clave) {
-        return NextResponse.json(
-          { error: "Falta configurar la clave de Gemini.", codigo: "SIN_CLAVE" },
-          { status: 503 }
-        );
-      }
-
-      const genAI = new GoogleGenerativeAI(clave);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        // Ver el comentario de `temperature` en la rama de OpenAI.
-        generationConfig: { responseMimeType: "application/json", temperature: 0 },
-      });
-
-      const resultado = await model.generateContent(prompt);
-      respuestaCruda = resultado.response.text();
+      throw error;
     }
 
     let bruto: unknown;

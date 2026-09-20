@@ -21,10 +21,38 @@ import { logger } from "@/lib/logger";
 /** Claves admitidas. Lo que no esté aquí se rechaza. */
 export const CLAVES_CONFIG = {
   PROVEEDOR_IA: {
-    etiqueta: "Proveedor de IA",
+    etiqueta: "Proveedor de IA por defecto",
     sensible: false,
     opciones: ["gemini", "openai"] as const,
-    ayuda: "Qué servicio interpreta el texto de los agendamientos.",
+    ayuda:
+      "Qué servicio atiende las funciones de IA. Si el proveedor elegido se " +
+      "queda sin crédito, se usa el otro automáticamente siempre que tenga " +
+      "clave configurada.",
+  },
+  /**
+   * Ajuste por módulo. «auto» significa seguir el proveedor por defecto, que
+   * es lo que quiere casi siempre; los ajustes sueltos existen porque no todos
+   * los módulos piden lo mismo: leer cédulas manuscritas de una foto y
+   * ordenar una frase de agenda son trabajos distintos, y un proveedor puede
+   * salir mejor en uno y peor en el otro.
+   */
+  PROVEEDOR_IA_OCR: {
+    etiqueta: "Proveedor para el escáner de planillas",
+    sensible: false,
+    opciones: ["auto", "gemini", "openai"] as const,
+    ayuda: "Lee las planillas fotografiadas o escaneadas en PDF.",
+  },
+  PROVEEDOR_IA_AGENDA: {
+    etiqueta: "Proveedor para la agenda",
+    sensible: false,
+    opciones: ["auto", "gemini", "openai"] as const,
+    ayuda: "Interpreta el texto de los agendamientos.",
+  },
+  PROVEEDOR_IA_ANALISIS: {
+    etiqueta: "Proveedor para análisis y chat",
+    sensible: false,
+    opciones: ["auto", "gemini", "openai"] as const,
+    ayuda: "Análisis de líderes, redacción de mensajes y respuestas del chat.",
   },
   GEMINI_API_KEY: {
     etiqueta: "Clave de Google Gemini",

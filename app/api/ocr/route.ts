@@ -1,7 +1,6 @@
 
 
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { AVISO_CONTENIDO_EXTERNO } from "@/lib/ia/sanitizar";
 import { logger } from "@/lib/logger";
@@ -9,9 +8,7 @@ import { exigirPermiso } from "@/lib/auth/permisos-ruta";
 import { PERMISOS } from "@/lib/permisos";
 import { checkRateLimit, rateLimiters } from "@/lib/ratelimit";
 import { ArchivoPlanillaSchema } from "@/lib/validation";
-
-const apiKey = process.env.GEMINI_API_KEY;
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+import { generarConIA, ErrorIA } from "@/lib/ia/generar";
 
 export const maxDuration = 60; // Set maximum execution time to 60 seconds since OCR might take a while
 export const dynamic = "force-dynamic";
@@ -23,7 +20,8 @@ export async function POST(req: NextRequest) {
     if (!permiso.ok) return permiso.respuesta;
 
     /**
-     * Cada llamada aquí gasta cuota de Gemini y hasta 60 s de proceso. Se
+     * Cada llamada aquí gasta cuota del proveedor de IA y hasta 60 s de
+     * proceso. Se
      * cuenta por cuenta de usuario, no por IP: en una jornada de campo todo
      * un puesto sale por la misma IP móvil y se bloquearían entre ellos,
      * mientras que una cuenta comprometida desde muchas IP no se frenaría.
@@ -44,10 +42,6 @@ export async function POST(req: NextRequest) {
           },
         }
       );
-    }
-
-    if (!genAI) {
-      return NextResponse.json({ error: "La API Key de Gemini no está configurada." }, { status: 500 });
     }
 
     const cuerpo = await req.json().catch(() => null);
@@ -71,13 +65,6 @@ export async function POST(req: NextRequest) {
 
     const mimeType = matches[1];
     const base64Data = matches[2];
-
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-      },
-    });
 
     const prompt = `
       Actúa como un experto sistema de reconocimiento óptico de caracteres (OCR) diseñado para leer planillas físicas de registro escritas a mano.
@@ -126,20 +113,35 @@ export async function POST(req: NextRequest) {
       ]
     `;
 
-    const avisoExterno = AVISO_CONTENIDO_EXTERNO;
+    /**
+     * El proveedor lo decide la configuración y, si el preferido se quedó sin
+     * crédito, la capa de IA pasa al otro sola. Con Gemini agotado esta ruta
+     * seguía fallando aunque hubiera clave de OpenAI puesta.
+     */
+    let text: string;
+    let proveedorUsado: string;
 
-    const imageParts = [
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType,
-        },
-      },
-    ];
+    try {
+      const respuesta = await generarConIA({
+        modulo: "ocr",
+        prompt: `${prompt}
 
-    const result = await model.generateContent([prompt, ...imageParts, avisoExterno]);
-    const response = await result.response;
-    let text = response.text();
+${AVISO_CONTENIDO_EXTERNO}`,
+        adjunto: { dataUrl: entrada.data.imagenUrl, mimeType, base64: base64Data },
+        json: true,
+      });
+      text = respuesta.texto;
+      proveedorUsado = respuesta.proveedor;
+    } catch (error) {
+      if (error instanceof ErrorIA) {
+        logger.warn("[ocr] No se pudo usar ningun proveedor de IA", { codigo: error.codigo });
+        return NextResponse.json(
+          { error: error.message, codigo: error.codigo },
+          { status: error.codigo === "SIN_CLAVE" ? 503 : 502 }
+        );
+      }
+      throw error;
+    }
 
     // Clean up potential markdown formatting (```json ... ```)
     text = text.replace(/```json\n?|```/g, "").trim();
@@ -198,7 +200,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const validadas = z.array(FilaSchema).max(200).safeParse(parsedData);
+    /**
+     * OpenAI, cuando se le exige JSON, obliga a que la raíz sea un objeto y
+     * devuelve la lista envuelta en alguna propiedad -"registros", "datos",
+     * lo que se le ocurra-. Gemini sí devuelve el arreglo pelado. En vez de
+     * atar el código al humor de cada proveedor, se acepta cualquiera de las
+     * dos formas y se busca el primer arreglo que haya dentro.
+     */
+    const comoArreglo = Array.isArray(parsedData)
+      ? parsedData
+      : parsedData && typeof parsedData === "object"
+        ? Object.values(parsedData as Record<string, unknown>).find(Array.isArray)
+        : undefined;
+
+    if (!comoArreglo) {
+      logger.warn("[ocr] La IA no devolvió ninguna lista de registros");
+      return NextResponse.json(
+        { error: "No se pudo interpretar la planilla." },
+        { status: 422 }
+      );
+    }
+
+    const validadas = z.array(FilaSchema).max(200).safeParse(comoArreglo);
 
     if (!validadas.success) {
       logger.warn("[ocr] La respuesta de la IA no tiene la forma esperada");
@@ -226,7 +249,7 @@ export async function POST(req: NextRequest) {
       },
     }));
 
-    return NextResponse.json({ data: conConfianzaCoherente });
+    return NextResponse.json({ data: conConfianzaCoherente, proveedor: proveedorUsado });
   } catch (error) {
     // El mensaje de la librería puede incluir parte del prompt o de la clave.
     logger.error("[ocr] Error procesando la imagen", { error: String(error) });
