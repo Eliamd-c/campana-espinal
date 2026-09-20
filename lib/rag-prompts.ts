@@ -1,3 +1,4 @@
+import { envolverNoConfiable } from "@/lib/ia/sanitizar";
 export function crearPromptRAG(
   pregunta: string,
   documentos: Array<{
@@ -9,8 +10,10 @@ export function crearPromptRAG(
   const contexto = documentos
     .map(
       (doc) => `
-**Documento: ${doc.titulo}** (${doc.categoria})
-${doc.contenido}
+**Documento ${doc.categoria}**
+${envolverNoConfiable(`Título: ${doc.titulo}
+
+${doc.contenido}`, { descripcion: "documento-de-consulta", maximo: 8000 })}
 ---`
     )
     .join("\n");

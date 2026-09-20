@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { envolverNoConfiable, AVISO_CONTENIDO_EXTERNO } from "@/lib/ia/sanitizar";
 
 export async function generarAnalisis(prompt: string): Promise<string> {
   const openAiKey = process.env.OPENAI_API_KEY;
@@ -48,8 +49,21 @@ export async function generarConHerramientas(
     `- ${t.name}: ${t.description}\n  Parámetros disponibles: ${Object.keys(t.parameters.properties || {}).join(", ")}`
   ).join("\n");
 
+  /**
+   * El historial arrastra texto que en algún punto vino de fuera: resúmenes
+   * de mensajes de votantes, nombres importados. Va delimitado como cualquier
+   * otro contenido externo.
+   */
   const historialStr = historial.length > 0
-    ? `\nCONVERSACIÓN PREVIA (usa este contexto para entender referencias como "esos", "ellos", etc.):\n${historial.slice(-6).map(h => `${h.rol === "user" ? "Coordinador" : "IA"}: ${h.contenido}`).join("\n")}\n`
+    ? `\nCONVERSACIÓN PREVIA (usa este contexto para entender referencias como "esos", "ellos", etc.):\n` +
+      envolverNoConfiable(
+        historial
+          .slice(-6)
+          .map((h) => `${h.rol === "user" ? "Coordinador" : "IA"}: ${h.contenido}`)
+          .join("\n"),
+        { descripcion: "conversacion-previa", maximo: 6000 }
+      ) +
+      "\n"
     : "";
 
   // ── PASO 1: La IA decide qué herramientas invocar ─────────────────────
@@ -57,7 +71,8 @@ export async function generarConHerramientas(
 Tienes estas herramientas disponibles para consultar la base de datos:
 ${toolsDesc}
 ${historialStr}
-PREGUNTA ACTUAL: "${pregunta}"
+PREGUNTA ACTUAL:
+${envolverNoConfiable(pregunta, { descripcion: "pregunta-del-coordinador", maximo: 2000 })}
 
 Responde ÚNICAMENTE con un bloque JSON sin texto adicional, indicando qué herramientas invocar:
 {
@@ -83,7 +98,7 @@ Si puedes responder sin datos adicionales (ej: saludos), usa: { "herramientas": 
   if (herramientasSolicitadas.length > 0) {
     const resultados: string[] = [];
     for (const tool of herramientasSolicitadas) {
-      console.log(`[Agente] Ejecutando: ${tool.nombre}`, tool.argumentos);
+      console.log("[Agente] Ejecutando herramienta:", tool.nombre);
       const resultado = await ejecutarTool(tool.nombre, tool.argumentos || {});
       resultados.push(`[${tool.nombre}]:\n${resultado}`);
     }
@@ -93,8 +108,16 @@ Si puedes responder sin datos adicionales (ej: saludos), usa: { "herramientas": 
   // ── PASO 3: Respuesta final con los datos reales ──────────────────────
   const promptPaso2 = `Eres el Analista Electoral de la Campaña El Espinal, Colombia.
 ${historialStr}
-PREGUNTA: "${pregunta}"
-${resultadosStr ? `\nDATOS REALES DE LA BASE DE DATOS:\n${resultadosStr}\n` : ""}
+PREGUNTA:
+${envolverNoConfiable(pregunta, { descripcion: "pregunta-del-coordinador", maximo: 2000 })}
+${resultadosStr
+  ? `\nDATOS REALES DE LA BASE DE DATOS:\n` +
+    // Estas filas incluyen `concepto_ia`, que se rellena con lo que escriben
+    // los votantes por WhatsApp. Sin delimitar, un mensaje entrante acabaría
+    // dando instrucciones al analista, que es quien tiene las herramientas.
+    envolverNoConfiable(resultadosStr, { descripcion: "datos-de-la-base", maximo: 20000 }) +
+    `\n\n${AVISO_CONTENIDO_EXTERNO}\n`
+  : ""}
 Instrucciones:
 - Responde directamente usando los números exactos obtenidos. No inventes datos.
 - Si los datos están vacíos o son 0, dilo claramente.
@@ -121,7 +144,9 @@ Mantén la respuesta concisa y en formato markdown.`;
 export function promptMensajeMasivo(contexto: string): string {
   return `Actúa como el jefe de comunicaciones de una campaña política moderna y empática en El Espinal, Colombia.
 Necesito que redactes un mensaje corto para enviar por WhatsApp masivo a los simpatizantes.
-Contexto o motivo del mensaje: "${contexto}"
+Contexto o motivo del mensaje:
+
+${envolverNoConfiable(contexto, { descripcion: "contexto-del-mensaje", maximo: 2000 })}
 Reglas:
 - El mensaje debe ser cálido, respetuoso y persuasivo.
 - Incluye la variable {{nombre}} donde corresponda saludar a la persona por su nombre de pila.
@@ -145,10 +170,24 @@ Reglas estrictas:
 - Usa markdown para estructurar respuestas largas.`;
 }
 
+/**
+ * El texto lo escribe un ciudadano cualquiera, así que va delimitado y con
+ * aviso: antes se interpolaba entre comillas y bastaba escribir una comilla
+ * para salirse y hacer pasar el resto por instrucciones del prompt.
+ */
 export function promptClasificarIntencionVoto(mensajeUsuario: string): string {
+  const bloque = envolverNoConfiable(mensajeUsuario, {
+    descripcion: "mensaje-del-ciudadano",
+    maximo: 2000,
+  });
+
   return `Actúa como un analizador de sentimiento político.
-Un ciudadano de El Espinal respondió a nuestro mensaje de WhatsApp con el siguiente texto:
-"${mensajeUsuario}"
+Un ciudadano de El Espinal respondió a nuestro mensaje de WhatsApp. Su mensaje
+es el siguiente:
+
+${bloque}
+
+${AVISO_CONTENIDO_EXTERNO}
 
 Clasifica su intención de voto basándote en este mensaje. Las opciones SON ESTRICTAMENTE UNA DE LAS SIGUIENTES:
 positivo

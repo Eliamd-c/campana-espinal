@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generarAnalisis } from "@/lib/gemini";
 import { handleError } from "@/lib/api/errors";
+import { envolverNoConfiable, AVISO_CONTENIDO_EXTERNO } from "@/lib/ia/sanitizar";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +14,9 @@ export async function POST(req: NextRequest) {
     const prompt = `Actúa como un experto en comunicación política y redacción de campañas masivas de WhatsApp en Colombia.
 Tengo el siguiente mensaje base que se enviará a miles de ciudadanos:
 
-"${texto}"
+${envolverNoConfiable(texto, { descripcion: "mensaje-base", maximo: 4000 })}
+
+${AVISO_CONTENIDO_EXTERNO}
 
 Necesito que generes exactamente 3 variaciones de este mensaje para evitar la detección de spam de WhatsApp (parafraseo dinámico).
 
@@ -46,7 +49,7 @@ Reglas estrictas:
       }
       throw new Error("El formato de variaciones devuelto no es un arreglo válido.");
     } catch (parseError: any) {
-      console.error("Error al parsear respuesta de Gemini:", responseText);
+      console.error("Error al parsear la respuesta de Gemini (contenido omitido)");
       // Fallback: tratar de dividir el texto si no vino como JSON válido
       return NextResponse.json({ 
         success: false, 

@@ -1,3 +1,4 @@
+import { envolverNoConfiable, AVISO_CONTENIDO_EXTERNO } from "@/lib/ia/sanitizar";
 interface DocumentoParaPrompt {
   titulo: string;
   contenido: string;
@@ -16,17 +17,22 @@ export function crearPromptRAGEstrict(
   pregunta: string,
   documentos: DocumentoParaPrompt[]
 ): string {
+  /**
+   * El título y el contenido de cada documento los sube alguien del equipo,
+   * pero su origen puede ser cualquiera: un PDF recibido, texto pegado de un
+   * WhatsApp. Si van crudos, quien consiga meter un documento le está dando
+   * instrucciones al analista. El separador `━━━` tampoco servía de barrera:
+   * se puede escribir dentro del propio documento.
+   */
   const contexto = documentos
     .map(
-      (doc, idx) => `
-[DOCUMENTO ${idx + 1}]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Título: ${doc.titulo}
-Categoría: ${doc.categoria}
-Fuente: ${doc.fuente}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${doc.contenido}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      (doc, idx) =>
+        `[DOCUMENTO ${idx + 1}] Categoría: ${String(doc.categoria ?? "").slice(0, 60)} · ` +
+        `Fuente: ${String(doc.fuente ?? "").slice(0, 60)}\n` +
+        envolverNoConfiable(`Título: ${doc.titulo}\n\n${doc.contenido}`, {
+          descripcion: "documento-de-consulta",
+          maximo: 8000,
+        })
     )
     .join("\n\n");
 
@@ -45,7 +51,9 @@ ${contexto}
 PREGUNTA DEL USUARIO
 ════════════════════════════════════════════════════════════════════════════
 
-"${pregunta}"
+${envolverNoConfiable(pregunta, { descripcion: "pregunta-del-coordinador", maximo: 2000 })}
+
+${AVISO_CONTENIDO_EXTERNO}
 
 ════════════════════════════════════════════════════════════════════════════
 ⚠️ INSTRUCCIONES CRÍTICAS - DEBES CUMPLIRLAS AL 100%

@@ -1,3 +1,10 @@
+/**
+ * AVISO: estas plantillas interpolan `{texto}` sin delimitar y hoy no las
+ * usa nadie (`ejecutarPrompt` no se invoca en ningún sitio). Antes de
+ * volver a usarlas hay que pasar el contenido externo por
+ * `envolverNoConfiable` de `lib/ia/sanitizar.ts`, o son una vía directa de
+ * inyección de instrucciones. Ver hallazgo #10 del backlog de seguridad.
+ */
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { logger } from "@/lib/logger";
 import { redis } from "@/lib/ratelimit";

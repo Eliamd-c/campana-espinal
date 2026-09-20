@@ -1,5 +1,7 @@
 import prisma from "@/lib/db";
 import { generarAnalisis, promptClasificarIntencionVoto } from "@/lib/gemini";
+import { elegirDeListaCerrada, pareceInyeccion } from "@/lib/ia/sanitizar";
+import { logger } from "@/lib/logger";
 
 const INTENCION_VALIDAS = ["positivo", "negativo", "indeciso"] as const;
 type IntencionVoto = typeof INTENCION_VALIDAS[number];
@@ -21,16 +23,29 @@ export async function perfilarIntencionVoto(
   }
 
   try {
+    // Se registra el intento pero no se bloquea: quien lo haga en serio no
+    // usará palabras reconocibles, y perder el perfilado de un mensaje
+    // legítimo por un falso positivo sería peor.
+    if (pareceInyeccion(texto)) {
+      logger.warn("[perfilado] El mensaje parece intentar reescribir el prompt", {
+        cedula: contacto_cedula,
+      });
+    }
+
     // 1. Llamar a Gemini para clasificar
     const prompt = promptClasificarIntencionVoto(texto);
     const respuesta = await generarAnalisis(prompt);
-    
-    // 2. Limpiar y validar la respuesta de la IA
-    const intencionRaw = respuesta.trim().toLowerCase().replace(/[^a-z]/g, "");
-    const intencion = INTENCION_VALIDAS.find(v => intencionRaw.startsWith(v)) || null;
+
+    // 2. La respuesta solo puede ser uno de los tres valores previstos. Es la
+    //    contención final: aunque una inyección tuerza al modelo, lo que se
+    //    guarda en la ficha del votante sigue siendo un valor válido o nada.
+    const intencion = elegirDeListaCerrada(respuesta, INTENCION_VALIDAS);
 
     if (!intencion) {
-      console.warn(`[Perfilamiento] IA devolvió respuesta inesperada: "${respuesta}"`);
+      logger.warn("[perfilado] La IA devolvió algo fuera de la lista prevista", {
+        cedula: contacto_cedula,
+        longitudRespuesta: respuesta?.length ?? 0,
+      });
       return null;
     }
 
@@ -43,11 +58,11 @@ export async function perfilarIntencionVoto(
       },
     });
 
-    console.log(`[Perfilamiento] Contacto ${contacto_cedula} → ${intencion}`);
+    logger.info("[perfilado] Intención de voto actualizada", { intencion });
     return intencion;
   } catch (error) {
     // Error silencioso: el perfilamiento nunca debe bloquear la operación normal
-    console.error(`[Perfilamiento] Error al perfilar contacto ${contacto_cedula}:`, error);
+    logger.error("[perfilado] Error al perfilar", { error: String(error) });
     return null;
   }
 }
