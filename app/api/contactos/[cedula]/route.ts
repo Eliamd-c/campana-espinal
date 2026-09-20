@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { handleError, notFound } from "@/lib/api/errors";
-import { ContactoSchema } from "@/lib/validation";
 import { invalidarCacheAlCrearContacto } from "@/lib/cache-strategies";
 
 export async function GET(

@@ -1,8 +1,9 @@
 import { Prisma } from "@prisma/client";
 
 export function buildContactoFilters(params: Record<string, string>): Prisma.ContactoWhereInput {
-  const filters: Prisma.ContactoWhereInput = {
-    AND: [
+  // El array se anota explicitamente: si no, TypeScript infiere una union de
+  // las formas concretas de cada rama y deja de encajar en ContactoWhereInput.
+  const condiciones: Prisma.ContactoWhereInput[] = [
       // Barrio
       params.barrio && params.barrio !== "Todos"
         ? { barrio: params.barrio }
@@ -49,8 +50,9 @@ export function buildContactoFilters(params: Record<string, string>): Prisma.Con
             }
           }
         : {},
-    ].filter(f => Object.keys(f).length > 0),
-  };
-  
-  return filters;
+  ];
+
+  // Las ramas que no aplican dejan un objeto vacío, que en Prisma significa
+  // "sin condición": se descartan para no arrastrar ruido a la consulta.
+  return { AND: condiciones.filter((f) => Object.keys(f).length > 0) };
 }
