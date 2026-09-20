@@ -61,7 +61,22 @@ function exigirSecreto(): string {
 const HASH_SEÑUELO = "$2a$12$CjwJpnAfnb1hhPhTBBN.Eehf6ZDrrIXfRKX1uO6wX5rqIFQC2KFiy";
 
 export const authOptions: NextAuthOptions = {
-  secret: exigirSecreto(),
+  /**
+   * El secreto se comprueba al leerlo, no al importar este módulo.
+   *
+   * Con la comprobación en el import, `next build` fallaba: Next importa
+   * todas las rutas para recolectar datos de página, así que compilar exigía
+   * tener los secretos de producción. Un build se hace en un sitio y se
+   * ejecuta en otro; pedirle las credenciales del entorno final es pedirle
+   * de más.
+   *
+   * Como getter, la comprobación ocurre en la primera petición que necesite
+   * firmar o leer una sesión. La garantía se mantiene: con un secreto
+   * ausente o adivinable la aplicación no atiende a nadie.
+   */
+  get secret() {
+    return exigirSecreto();
+  },
   providers: [
     CredentialsProvider({
       name: "Credentials",

@@ -1,3 +1,7 @@
+// Esta ruta comprueba permisos, asi que depende de quien la pide:
+// no se puede generar en tiempo de compilacion.
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { generarAnalisis, promptAnalisisLider, promptMensajeMasivo } from "@/lib/gemini";
 import { generarConHerramientasV2, generarConHerramientasV2Stream } from "@/lib/gemini-tools";

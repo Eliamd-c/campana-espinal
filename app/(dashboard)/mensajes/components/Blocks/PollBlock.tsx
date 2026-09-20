@@ -22,7 +22,7 @@ export default function PollBlock({ config }: { config: BlockConfig }) {
         <span className="text-xs text-slate-400 font-medium">
           {config.tipo_encuesta === "multiple" ? "Selección Múltiple" : "Selección Única"}
         </span>
-        {config.permitir_otro && <span className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded">Permite "Otro"</span>}
+        {config.permitir_otro && <span className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded">Permite &ldquo;Otro&rdquo;</span>}
       </div>
     </div>
   );

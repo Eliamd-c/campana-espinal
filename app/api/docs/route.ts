@@ -1,3 +1,7 @@
+// La especificacion se arma leyendo los ficheros del proyecto y la ruta
+// comprueba la sesion: ninguna de las dos cosas puede ocurrir en el build.
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { spec } from "@/lib/swagger";

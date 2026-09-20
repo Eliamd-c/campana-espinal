@@ -1,3 +1,7 @@
+// Esta ruta comprueba permisos, asi que depende de quien la pide:
+// no se puede generar en tiempo de compilacion.
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, rateLimiters } from "@/lib/ratelimit";
 import { ScanSchema } from "@/lib/validation";

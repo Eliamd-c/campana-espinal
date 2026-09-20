@@ -1,3 +1,7 @@
+// Esta ruta comprueba permisos, asi que depende de quien la pide:
+// no se puede generar en tiempo de compilacion.
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { logger } from "@/lib/logger";

@@ -116,7 +116,7 @@ export default function PollBlockEditor({ config, onActualizar }: any) {
           className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
         />
         <span className="text-sm font-medium text-slate-600 group-hover:text-slate-800 transition-colors">
-          Permitir "Otro" personalizado
+          Permitir &ldquo;Otro&rdquo; personalizado
         </span>
       </label>
     </div>

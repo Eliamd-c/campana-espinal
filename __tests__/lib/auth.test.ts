@@ -93,37 +93,51 @@ describe("acceso al panel", () => {
   });
 });
 
+/**
+ * El secreto se comprueba al LEERLO, no al importar el módulo.
+ *
+ * Con la comprobación en el import, `next build` fallaba: Next importa todas
+ * las rutas para recolectar datos de página, así que compilar exigía tener
+ * los secretos de producción. La garantía es la misma —con un secreto malo la
+ * aplicación no atiende a nadie— pero se aplica en la primera petición.
+ */
 describe("secreto de firma de sesión", () => {
-  test("la aplicación no arranca sin NEXTAUTH_SECRET", async () => {
-    vi.resetModules();
+  async function leerSecreto(valor: string | undefined) {
+    const previo = process.env.NEXTAUTH_SECRET;
+    if (valor === undefined) delete process.env.NEXTAUTH_SECRET;
+    else process.env.NEXTAUTH_SECRET = valor;
+    try {
+      const { authOptions } = await import("../../lib/auth");
+      return authOptions.secret;
+    } finally {
+      process.env.NEXTAUTH_SECRET = previo;
+    }
+  }
+
+  test("importar el módulo no exige el secreto (el build no lo necesita)", async () => {
     const previo = process.env.NEXTAUTH_SECRET;
     delete process.env.NEXTAUTH_SECRET;
-    await expect(reimportarAuth("sin-secreto")).rejects.toThrow(/NEXTAUTH_SECRET/);
+    await expect(import("../../lib/auth")).resolves.toBeTruthy();
     process.env.NEXTAUTH_SECRET = previo;
+  });
+
+  test("sin NEXTAUTH_SECRET la aplicación no atiende peticiones", async () => {
+    await expect(leerSecreto(undefined)).rejects.toThrow(/NEXTAUTH_SECRET/);
   });
 
   test("rechaza un secreto demasiado corto para ser seguro", async () => {
-    vi.resetModules();
-    const previo = process.env.NEXTAUTH_SECRET;
-    process.env.NEXTAUTH_SECRET = "corto";
-    await expect(reimportarAuth("secreto-corto")).rejects.toThrow(/NEXTAUTH_SECRET/);
-    process.env.NEXTAUTH_SECRET = previo;
+    await expect(leerSecreto("corto")).rejects.toThrow(/NEXTAUTH_SECRET/);
   });
 
   test("rechaza una frase escrita a mano aunque sea larga", async () => {
-    vi.resetModules();
-    const previo = process.env.NEXTAUTH_SECRET;
-    // 37 caracteres, pero solo 20 distintos: se rompe fuera de linea.
-    process.env.NEXTAUTH_SECRET = "mi_clave_secreta_para_la_campana_2026";
-    await expect(reimportarAuth("frase")).rejects.toThrow(/NEXTAUTH_SECRET/);
-    process.env.NEXTAUTH_SECRET = previo;
+    // 37 caracteres, pero solo 20 distintos: se rompe fuera de línea.
+    await expect(leerSecreto("mi_clave_secreta_para_la_campana_2026")).rejects.toThrow(
+      /NEXTAUTH_SECRET/
+    );
   });
 
   test("acepta un secreto aleatorio de 32 bytes en base64", async () => {
-    vi.resetModules();
-    const previo = process.env.NEXTAUTH_SECRET;
-    process.env.NEXTAUTH_SECRET = require("crypto").randomBytes(32).toString("base64");
-    await expect(reimportarAuth("aleatorio")).resolves.toBeTruthy();
-    process.env.NEXTAUTH_SECRET = previo;
+    const aleatorio = require("crypto").randomBytes(32).toString("base64");
+    await expect(leerSecreto(aleatorio)).resolves.toBe(aleatorio);
   });
 });

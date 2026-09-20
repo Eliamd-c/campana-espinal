@@ -96,7 +96,7 @@ export default function AnaliticaCampanaPage() {
           <div className="p-12 text-center text-slate-500 bg-white rounded-xl shadow-sm border border-slate-200">
             <AlertCircle className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <h3 className="text-base font-bold text-slate-700">No se encontraron campañas</h3>
-            <p className="text-sm text-slate-400 mt-1">Crea una campaña en la pestaña "Enviar Mensajes" para verla aquí.</p>
+            <p className="text-sm text-slate-400 mt-1">Crea una campaña en la pestaña &ldquo;Enviar Mensajes&rdquo; para verla aquí.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

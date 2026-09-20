@@ -795,7 +795,7 @@ export default function MensajesPage() {
                     {liveStats.pendientes} mensajes esperan días siguientes
                   </p>
                   <p className="text-yellow-500/70 text-xs mt-0.5">
-                    Mañana, cuando se reseteen los límites, presiona "Continuar" para encolar el siguiente lote.
+                    Mañana, cuando se reseteen los límites, presiona &ldquo;Continuar&rdquo; para encolar el siguiente lote.
                   </p>
                 </div>
                 <button
