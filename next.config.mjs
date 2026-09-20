@@ -87,6 +87,28 @@ const nextConfig = {
   // busca exploits conocidos.
   poweredByHeader: false,
 
+  experimental: {
+    /**
+     * Baileys y su pila de websockets se cargan tal cual, sin pasar por
+     * webpack.
+     *
+     * `ws` intenta cargar dos módulos nativos opcionales (`bufferutil` y
+     * `utf-8-validate`) dentro de un `try`. Al empaquetarlo, webpack sustituye
+     * esa carga por un objeto vacío que sí resuelve, así que el `try` no
+     * falla y nunca se usa la implementación de respaldo en JavaScript: al
+     * primer marco del websocket revienta con «e.mask is not a function».
+     *
+     * Dejarlos fuera del bundle también evita empaquetar el `pino` de Baileys
+     * y sus transportes, que se cargan por nombre en tiempo de ejecución.
+     */
+    serverComponentsExternalPackages: [
+      "@whiskeysockets/baileys",
+      "ws",
+      "pino",
+      "link-preview-js",
+    ],
+  },
+
   async headers() {
     return [{ source: "/:path*", headers: cabecerasDeSeguridad }];
   },
