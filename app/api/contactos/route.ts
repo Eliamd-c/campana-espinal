@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import { limitarPagina, registrarAccesoADatos } from "@/lib/datos/acceso";
 import { handleError } from "@/lib/api/errors";
 import { Prisma } from "@prisma/client";
 import { invalidarCacheAlCrearContacto } from "@/lib/cache-strategies";
@@ -23,7 +26,9 @@ export async function GET(req: NextRequest) {
     let intencion_voto = searchParams.get("intencion_voto");
     const puesto = searchParams.get("puesto");
     const search = searchParams.get("search") || searchParams.get("q");
-    const limit = Number(searchParams.get("limit")) || 50;
+    // Tope duro: sin el, `?limit=999999` devolvia las 5.985 cedulas de una
+    // sola vez, a cualquiera con sesion.
+    const limit = limitarPagina(searchParams.get("limit"));
     const cursor = searchParams.get("cursor");
 
     if (intencion_voto === "todos" || intencion_voto === "Todos los registrados") {
@@ -92,6 +97,19 @@ export async function GET(req: NextRequest) {
         }
       }),
     ]);
+
+    /**
+     * Los accesos masivos quedan anotados: qué se consultó y cuánto, nunca
+     * el contenido. Si un día se filtra el padrón, la diferencia entre saber
+     * quién lo sacó y no saberlo está en esta línea.
+     */
+    const sesion = await getServerSession(authOptions);
+    await registrarAccesoADatos({
+      usuarioId: String((sesion?.user as any)?.id ?? "desconocido"),
+      ruta: "/api/contactos",
+      registros: contactos.length,
+      filtros: { barrio, intencion_voto, puesto, buscando: Boolean(search) },
+    });
 
     return NextResponse.json({
       data: contactos,

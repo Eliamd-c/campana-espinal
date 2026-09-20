@@ -229,7 +229,7 @@ model Auditoria {
   id            Int       @id @default(autoincrement())
   tabla         String?   @db.VarChar(40)
   registro_id   String?   @db.VarChar(40)
-  accion        String?   @db.VarChar(10) // 'CREATE' | 'UPDATE' | 'DELETE'
+  accion        String?   @db.VarChar(40) // consulta_masiva, exportacion, alta, desactivar, password…
   datos_antes   Json?
   datos_despues Json?
   usuario_id    String?   @db.VarChar(80)
