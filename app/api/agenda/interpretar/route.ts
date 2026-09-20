@@ -69,7 +69,7 @@ export async function POST(request: Request) {
       if (!geminiKey) return NextResponse.json({ error: 'Falta GEMINI_API_KEY' }, { status: 500 });
       
       const genAI = new GoogleGenerativeAI(geminiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
       const result = await model.generateContent(prompt);
       const responseText = result.response.text().trim().replace(/^```(?:json)?\n?/g, '').replace(/```$/g, '');
       try {
