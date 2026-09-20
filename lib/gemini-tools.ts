@@ -67,7 +67,7 @@ Pregunta actual: "${pregunta}"
 
 Usa las herramientas disponibles para consultar la base de datos y obtener respuestas exactas.
 Si necesitas datos para responder, usa las herramientas. Si ya tienes la respuesta o la pregunta es un saludo/agradecimiento, responde directamente.
-IMPORTANTE SOBRE CLAVES: Para ejecutar_consulta_sql en modo de solo lectura (SELECT), NUNCA pidas una clave de administrador, haz la consulta directamente. SOLO debes pedir la clave de administrador al usuario si la solicitud implica modificar, actualizar, borrar o insertar datos (UPDATE, DELETE, INSERT).`
+IMPORTANTE: ejecutar_consulta_sql es de SOLO LECTURA (SELECT sobre las tablas de la campana). Nunca pidas claves al usuario: no existe forma de modificar datos por SQL. Si te piden crear o cambiar registros, usa las herramientas especificas; si no hay ninguna para eso, dilo con claridad en vez de intentarlo con SQL.`
       }
     ]
   });
@@ -206,7 +206,7 @@ Pregunta actual: "${pregunta}"
 
 Usa las herramientas disponibles para consultar la base de datos y obtener respuestas exactas.
 Si necesitas datos para responder, usa las herramientas. Si ya tienes la respuesta o la pregunta es un saludo/agradecimiento, responde directamente.
-IMPORTANTE SOBRE CLAVES: Para ejecutar_consulta_sql en modo de solo lectura (SELECT), NUNCA pidas una clave de administrador, haz la consulta directamente. SOLO debes pedir la clave de administrador al usuario si la solicitud implica modificar, actualizar, borrar o insertar datos (UPDATE, DELETE, INSERT).`
+IMPORTANTE: ejecutar_consulta_sql es de SOLO LECTURA (SELECT sobre las tablas de la campana). Nunca pidas claves al usuario: no existe forma de modificar datos por SQL. Si te piden crear o cambiar registros, usa las herramientas especificas; si no hay ninguna para eso, dilo con claridad en vez de intentarlo con SQL.`
       }
     ]
   });

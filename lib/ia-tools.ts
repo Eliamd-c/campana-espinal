@@ -1,4 +1,8 @@
 import prisma from "@/lib/db";
+import { validarConsultaLectura, LIMITE_FILAS, TIMEOUT_MS, TABLAS_PERMITIDAS } from "@/lib/sql-guard";
+import { logger } from "@/lib/logger";
+import { envolverNoConfiable, AVISO_CONTENIDO_EXTERNO } from "@/lib/ia/sanitizar";
+import { clienteAnalista } from "@/lib/db-analista";
 import { buscarDocumentosSimilares } from "@/lib/embeddings";
 import { generarAnalisis } from "@/lib/gemini";
 
@@ -116,12 +120,11 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: "ejecutar_consulta_sql",
-    description: "Ejecuta una consulta SQL en la base de datos. IMPORTANTE: Para leer datos (SELECT), NO necesitas pedir ninguna clave al usuario, hazlo directamente. Para hacer cambios (INSERT, UPDATE, DELETE, etc.) DEBES pasar el parámetro clave_admin proporcionado por el usuario.",
+    description: "Ejecuta una consulta SQL de SOLO LECTURA (SELECT) sobre las tablas de la campana para responder preguntas analiticas. No puede modificar datos: para crear o cambiar registros usa las herramientas especificas. No pidas claves al usuario.",
     parameters: {
       type: "object",
       properties: {
-        consulta: { type: "string", description: "La consulta SQL (Ej: UPDATE contactos SET...)" },
-        clave_admin: { type: "string", description: "La clave secreta proporcionada por el usuario en el chat para autorizar la modificación de datos. Solo pásala si el usuario te la escribe explícitamente." }
+        consulta: { type: "string", description: "Una unica consulta SELECT (Ej: SELECT barrio, COUNT(*) FROM contactos GROUP BY barrio)" }
       },
       required: ["consulta"]
     }
@@ -281,7 +284,11 @@ export async function ejecutarHerramienta(nombre: string, args: any): Promise<st
         
         // Generar variaciones usando Gemini
         const prompt = `Genera 5 formas diferentes de decir el siguiente mensaje para una campaña política. Deben ser variaciones sutiles pero que cambien la estructura.
-        Mensaje original: "${mensaje_base}"
+
+${envolverNoConfiable(mensaje_base, { descripcion: "mensaje-original", maximo: 4000 })}
+
+${AVISO_CONTENIDO_EXTERNO}
+
         Devuelve SOLO un array JSON de strings.`;
         
         const respuesta = await generarAnalisis(prompt);
@@ -294,11 +301,19 @@ export async function ejecutarHerramienta(nombre: string, args: any): Promise<st
           variaciones = respuesta.split("\n").filter((l: string) => l.trim().length > 10);
         }
 
-        // Guardar en la DB
-        const dataToInsert = variaciones.map(v => ({
-          campana_id: campana_id,
-          texto: v.trim()
-        }));
+        // Estas variaciones se envían después a miles de personas: se guarda
+        // solo lo que de verdad es texto, con longitud acotada.
+        const dataToInsert = variaciones
+          .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+          .slice(0, 10)
+          .map((v) => ({
+            campana_id: campana_id,
+            texto: v.trim().slice(0, 4000),
+          }));
+
+        if (dataToInsert.length === 0) {
+          return JSON.stringify({ error: "La IA no devolvió variaciones utilizables." });
+        }
 
         await prisma.campanaVariacion.createMany({
           data: dataToInsert
@@ -321,6 +336,9 @@ export async function ejecutarHerramienta(nombre: string, args: any): Promise<st
         
         const schemaMap: any = {};
         for (const row of result) {
+           // El modelo solo debe conocer lo que puede consultar: ensenarle
+           // whatsapp_auth_state o las tablas de sesiones es invitarlo a pedirlas.
+           if (!TABLAS_PERMITIDAS.has(String(row.table_name).toLowerCase())) continue;
            if (!schemaMap[row.table_name]) schemaMap[row.table_name] = [];
            schemaMap[row.table_name].push(`${row.column_name} (${row.data_type})`);
         }
@@ -333,60 +351,57 @@ export async function ejecutarHerramienta(nombre: string, args: any): Promise<st
       }
 
       case "ejecutar_consulta_sql": {
-        const sql = args.consulta as string;
-        const claveAdmin = args.clave_admin as string;
-        
-        // Verifica si la consulta es de escritura
-        const upperSql = sql.toUpperCase();
-        const isWriteQuery = 
-          !upperSql.trim().startsWith("SELECT") ||
-          upperSql.includes("INSERT ") ||
-          upperSql.includes("UPDATE ") ||
-          upperSql.includes("DELETE ") ||
-          upperSql.includes("DROP ") ||
-          upperSql.includes("ALTER ") ||
-          upperSql.includes("TRUNCATE ");
+        // El SQL de aqui lo redacta el modelo, que lee contenido no confiable
+        // (mensajes de votantes, OCR). Se valida antes y, sobre todo, se
+        // ejecuta en una transaccion READ ONLY: es PostgreSQL quien garantiza
+        // que no hay escritura, no el analisis de texto de sql-guard.
+        const veredicto = validarConsultaLectura(args.consulta as string);
 
-        // Filtro estricto de seguridad anti-escritura
-        if (isWriteQuery) {
-          const expectedPassword = process.env.SUPERADMIN_PASSWORD || "admin123";
-          
-          if (!claveAdmin) {
-            return JSON.stringify({ error: "Seguridad: Acción bloqueada. Para realizar cambios en la base de datos, debes pedirle al usuario que te proporcione la clave de seguridad." });
-          }
-          
-          if (claveAdmin !== expectedPassword) {
-            return JSON.stringify({ error: "Seguridad: La clave proporcionada es incorrecta. Acción bloqueada." });
-          }
+        if (!veredicto.ok) {
+          logger.warn("[ia-tools] Consulta SQL rechazada", {
+            motivo: veredicto.motivo,
+          });
+          return JSON.stringify({
+            error: `Consulta no permitida: ${veredicto.motivo}`,
+            nota: "Reformula la pregunta como una lectura sobre las tablas de la campana, o usa una herramienta especifica si necesitas modificar datos.",
+          });
         }
 
         try {
-          // Ejecuta la consulta cruda y confía en el resultado de Postgres
-          // Si es un UPDATE/DELETE, prisma executeRaw o queryRawUnsafe funciona, pero puede devolver objetos vacíos o número de filas afectadas
-          let resultados: any;
-          if (isWriteQuery) {
-            resultados = await prisma.$executeRawUnsafe(sql);
-            return JSON.stringify({ exito: true, filas_afectadas: resultados, nota: "Operación de modificación completada con éxito." });
-          } else {
-            resultados = await prisma.$queryRawUnsafe(sql);
-          }
-          
-          // Reemplazamos los BigInt por Number o String para que JSON.stringify no lance error
-          const cleanResultados = resultados.map((row: any) => {
-             const cleanRow: any = {};
-             for (const key in row) {
-               cleanRow[key] = typeof row[key] === "bigint" ? row[key].toString() : row[key];
-             }
-             return cleanRow;
+          // Rol de solo lectura cuando esta configurado (#2b): es la unica
+          // capa que sobrevive a un fallo del validador de texto.
+          const db = clienteAnalista();
+          const resultados = await db.$transaction(async (tx) => {
+            await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
+            await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${TIMEOUT_MS}`);
+            return tx.$queryRawUnsafe<any[]>(veredicto.sql);
           });
 
-          return JSON.stringify({ 
-            exito: true, 
-            resultados: cleanResultados, 
-            nota: "Si los resultados son extensos, resume los hallazgos principales para el usuario de forma conversacional." 
+          // BigInt no sobrevive a JSON.stringify.
+          const limpios = resultados.map((row: any) => {
+            const salida: any = {};
+            for (const key in row) {
+              salida[key] = typeof row[key] === "bigint" ? row[key].toString() : row[key];
+            }
+            return salida;
+          });
+
+          return JSON.stringify({
+            exito: true,
+            resultados: limpios,
+            nota: limpios.length >= LIMITE_FILAS
+              ? `Resultado recortado a ${LIMITE_FILAS} filas. Si necesitas mas, agrega el dato en la consulta en vez de listar todo.`
+              : "Si los resultados son extensos, resume los hallazgos principales de forma conversacional.",
           });
         } catch (e: any) {
-          return JSON.stringify({ error: "Error ejecutando SQL", detalle: e.message });
+          logger.error("[ia-tools] Error ejecutando consulta de lectura", {
+            error: e.message,
+          });
+          // El detalle del error de Postgres revela estructura interna: no se
+          // devuelve al modelo, que a su vez se lo cuenta al usuario.
+          return JSON.stringify({
+            error: "La consulta no se pudo ejecutar. Revisa los nombres de columnas con obtener_esquema_bd e intenta de nuevo.",
+          });
         }
       }
 
