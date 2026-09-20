@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
-import { baseUrl, cookieDeSesion } from "./helpers";
+import { baseUrl, cookieDeSesion, hayServidor } from "./helpers";
 
 /**
  * Tests de integracion contra un servidor en marcha.
@@ -10,18 +10,28 @@ import { baseUrl, cookieDeSesion } from "./helpers";
  * credenciales de prueba (TEST_USER / TEST_PASSWORD).
  */
 let cookie: string | null = null;
+let servidorEnMarcha = false;
+
 beforeAll(async () => {
-  cookie = await cookieDeSesion();
+  servidorEnMarcha = await hayServidor();
+  if (servidorEnMarcha) cookie = await cookieDeSesion();
 });
-const conSesion = () => (cookie ? it : it.skip);
+
+/**
+ * Estos son tests de integracion: necesitan la aplicacion corriendo. Si no
+ * hay servidor se omiten, porque un fallo por "no hay nadie escuchando" no
+ * dice nada sobre el codigo y acostumbra a ver la suite en rojo.
+ */
+const conServidor = () => (servidorEnMarcha ? it : it.skip);
+const conSesion = () => (servidorEnMarcha && cookie ? it : it.skip);
 
 describe("API Lideres", () => {
-  it("rechaza a quien no ha iniciado sesion", async () => {
+  conServidor()("rechaza a quien no ha iniciado sesion", async () => {
     const r = await request(baseUrl).get("/api/lideres");
     expect(r.status).toBe(401);
   });
 
-  it("no permite crear lideres sin sesion", async () => {
+  conServidor()("no permite crear lideres sin sesion", async () => {
     const r = await request(baseUrl)
       .post("/api/lideres")
       .send({ nombre: "Intruso", telefono: "3000000000", barrio: "Centro" });

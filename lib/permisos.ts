@@ -58,6 +58,8 @@ export const PERMISOS = {
   USUARIOS_GESTIONAR: "usuarios.gestionar",
   /** Consultar el registro de quién hizo qué. */
   AUDITORIA_VER: "auditoria.ver",
+  /** Ver y cambiar las claves de API y ajustes del sistema. */
+  CONFIGURACION_GESTIONAR: "configuracion.gestionar",
 } as const;
 
 export type Permiso = (typeof PERMISOS)[keyof typeof PERMISOS];
@@ -151,6 +153,11 @@ export const GRUPOS_DE_PERMISOS: {
         advertencia: "Quien tenga esto controla quién entra al sistema.",
       },
       { permiso: PERMISOS.AUDITORIA_VER, etiqueta: "Consultar el registro de actividad" },
+      {
+        permiso: PERMISOS.CONFIGURACION_GESTIONAR,
+        etiqueta: "Configurar claves de API del sistema",
+        advertencia: "Permite cambiar las claves de los servicios de IA, que se facturan por uso.",
+      },
     ],
   },
 ];

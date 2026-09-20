@@ -1,87 +1,219 @@
-import { NextResponse } from 'next/server';
-import { exigirPermiso } from '@/lib/auth/permisos-ruta';
+// Depende de quien hace la peticion: no se puede generar en el build.
+export const dynamic = "force-dynamic";
 
-export const dynamic = 'force-dynamic';
+import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { z } from "zod";
+import { exigirPermiso } from "@/lib/auth/permisos-ruta";
+import { PERMISOS } from "@/lib/permisos";
+import { obtenerConfig } from "@/lib/configuracion";
+import { logger } from "@/lib/logger";
+import {
+  envolverNoConfiable,
+  AVISO_CONTENIDO_EXTERNO,
+  pareceInyeccion,
+} from "@/lib/ia/sanitizar";
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import prisma from '@/lib/db';
+/**
+ * Convierte un texto escrito a mano en los datos de un agendamiento.
+ *
+ * «Reunión el 4 de agosto en el barrio Caballero y Góngora, carrera 12 #
+ * 11-18, 6:30 pm. Solicito tarima, sonido, sillas 200, 200 refrigerios.»
+ *
+ * **No guarda nada.** Devuelve lo que ha entendido para que la persona lo
+ * revise y corrija antes de agendar. Un dato inventado que se guarda solo es
+ * peor que un hueco vacío: el hueco se ve, el dato inventado no.
+ */
 
-export async function POST(request: Request) {
+/** Tope del texto de entrada. Una solicitud real no se acerca. */
+const MAX_TEXTO = 3000;
+
+const EntradaSchema = z.object({
+  texto: z.string().min(3, "Escribe la solicitud").max(MAX_TEXTO),
+});
+
+/**
+ * Forma esperada de la respuesta del modelo. Lo que no encaje se descarta:
+ * esto va a un formulario que la persona revisa, no directo a la base, pero
+ * aun así no se le pasa al navegador lo que sea que haya contestado.
+ */
+const SalidaSchema = z.object({
+  titulo: z.string().max(200).default(""),
+  fecha: z.string().max(40).default(""),
+  hora: z.string().max(10).default(""),
+  barrio: z.string().max(80).default(""),
+  direccion: z.string().max(200).default(""),
+  recursos: z
+    .array(
+      z.object({
+        item: z.string().max(120),
+        cantidad: z.coerce.number().int().min(0).max(100000).nullable().default(null),
+      })
+    )
+    .max(40)
+    .default([]),
+  no_reconocido: z.array(z.string().max(200)).max(20).default([]),
+});
+
+function construirPrompt(texto: string): string {
+  const hoy = new Date().toISOString().slice(0, 10);
+
+  return `Eres un asistente que convierte solicitudes de agendamiento en datos estructurados para una campaña política en El Espinal, Tolima (Colombia).
+
+Hoy es ${hoy}. Si el texto no indica año, usa el más próximo en el futuro.
+
+Devuelve SOLO un objeto JSON, sin markdown ni explicaciones, con esta forma:
+{
+  "titulo": "de qué es la reunión o el evento",
+  "fecha": "YYYY-MM-DD, o cadena vacía si no se menciona",
+  "hora": "HH:mm en 24 horas, o cadena vacía si no se menciona",
+  "barrio": "solo el nombre del barrio, o cadena vacía",
+  "direccion": "la dirección exacta (carrera, calle, número), o cadena vacía",
+  "recursos": [{"item": "sillas", "cantidad": 200}, {"item": "sonido", "cantidad": null}],
+  "no_reconocido": ["fragmentos que no encajan en ningún campo"]
+}
+
+Reglas:
+- Un campo que no aparezca en el texto va como cadena vacía. NO lo inventes:
+  es mejor un hueco que la persona rellena que un dato falso que se cuela.
+- Barrio y dirección son cosas distintas: "barrio Caballero y Góngora,
+  carrera 12 # 11-18" son dos datos, no uno.
+- En recursos, "cantidad" es null cuando no se indica número.
+
+Solicitud recibida:
+
+${envolverNoConfiable(texto, { descripcion: "solicitud-de-agendamiento", maximo: MAX_TEXTO })}
+
+${AVISO_CONTENIDO_EXTERNO}`;
+}
+
+/** Quita el markdown con el que algunos modelos envuelven el JSON. */
+function limpiarJson(respuesta: string): string {
+  return respuesta.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+}
+
+export async function POST(req: NextRequest) {
+  const permiso = await exigirPermiso(PERMISOS.AGENDA_EDITAR);
+  if (!permiso.ok) return permiso.respuesta;
+
   try {
-    const auth = await exigirPermiso('agenda.editar' as any);
-    if (!auth.ok) return auth.respuesta;
-    
-    const body = await request.json();
-    
-    // Obtener configuraciones de la base de datos
-    const configs = await prisma.configuracionGlobal.findMany();
-    const configMap = configs.reduce((acc: any, curr) => {
-      acc[curr.clave] = curr.valor;
-      return acc;
-    }, {});
-
-    const proveedorIA = configMap['PROVEEDOR_IA'] || 'gemini'; // 'gemini' o 'openai'
-    const geminiKey = configMap['GEMINI_API_KEY'] || process.env.GEMINI_API_KEY;
-    const openaiKey = configMap['OPENAI_API_KEY'] || process.env.OPENAI_API_KEY;
-
-    const prompt = `
-      Analiza el siguiente texto escrito por un usuario para agendar un evento o reunión.
-      Extrae los siguientes datos en formato JSON estricto (no uses markdown \`\`\`json):
-      {
-        "titulo": "Título inferido para el evento",
-        "fecha": "Fecha en formato YYYY-MM-DDTHH:mm (intenta adivinar la más próxima, usa el año actual si no se provee. Hoy es ${new Date().toISOString()})",
-        "lugar": "Dirección o barrio si se menciona, si no cadena vacía",
-        "recursos": [{"item": "sillas", "cantidad": 200}],
-        "no_reconocido": ["cualquier cosa extra que no encaje"]
-      }
-
-      Texto del usuario: "${body.texto}"
-    `;
-
-    let parsedData = null;
-
-    if (proveedorIA === 'openai') {
-      if (!openaiKey) return NextResponse.json({ error: 'Falta OPENAI_API_KEY' }, { status: 500 });
-      
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openaiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
-      
-      const data = await response.json();
-      if (data.error) throw new Error(`OpenAI API: ${data.error.message}`);
-      if (!data.choices || !data.choices[0]) throw new Error('Estructura inesperada de OpenAI API');
-      const responseText = data.choices[0].message.content.trim().replace(/^```(?:json)?\n?/g, '').replace(/```$/g, '');
-      try {
-        parsedData = JSON.parse(responseText);
-      } catch (parseError) {
-        throw new Error('La IA no devolvió un JSON válido: ' + responseText);
-      }
-      
-    } else {
-      if (!geminiKey) return NextResponse.json({ error: 'Falta GEMINI_API_KEY' }, { status: 500 });
-      
-      const genAI = new GoogleGenerativeAI(geminiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-      const result = await model.generateContent(prompt);
-      const responseText = result.response.text().trim().replace(/^```(?:json)?\n?/g, '').replace(/```$/g, '');
-      try {
-        parsedData = JSON.parse(responseText);
-      } catch (parseError) {
-        throw new Error('La IA no devolvió un JSON válido: ' + responseText);
-      }
+    const parsed = EntradaSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Texto inválido", details: parsed.error.flatten() },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json(parsedData);
-  } catch (error: any) {
-    console.error("Error AI:", error);
-    return NextResponse.json({ error: `Error interno de IA: ${error.message || 'Desconocido'}` }, { status: 500 });
+    const { texto } = parsed.data;
+
+    // Se registra el intento, no se bloquea: quien lo haga en serio no usará
+    // palabras reconocibles, y perder una solicitud legítima sería peor.
+    if (pareceInyeccion(texto)) {
+      logger.warn("[agenda] El texto a interpretar parece intentar reescribir el prompt", {
+        usuario: permiso.quien.username,
+      });
+    }
+
+    const proveedor = (await obtenerConfig("PROVEEDOR_IA")) ?? "gemini";
+    const prompt = construirPrompt(texto);
+
+    let respuestaCruda: string;
+
+    if (proveedor === "openai") {
+      const clave = await obtenerConfig("OPENAI_API_KEY");
+      if (!clave) {
+        return NextResponse.json(
+          { error: "Falta configurar la clave de OpenAI.", codigo: "SIN_CLAVE" },
+          { status: 503 }
+        );
+      }
+
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${clave}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          response_format: { type: "json_object" },
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      const datos = await res.json();
+
+      if (!res.ok || datos.error) {
+        // El detalle se queda en el registro: un error de la API puede
+        // incluir fragmentos del prompt o de la clave.
+        logger.error("[agenda] Error de OpenAI", { detalle: datos?.error?.message });
+        return NextResponse.json(
+          { error: "El servicio de IA no respondió correctamente." },
+          { status: 502 }
+        );
+      }
+
+      respuestaCruda = datos.choices?.[0]?.message?.content ?? "";
+    } else {
+      const clave = await obtenerConfig("GEMINI_API_KEY");
+      if (!clave) {
+        return NextResponse.json(
+          { error: "Falta configurar la clave de Gemini.", codigo: "SIN_CLAVE" },
+          { status: 503 }
+        );
+      }
+
+      const genAI = new GoogleGenerativeAI(clave);
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        generationConfig: { responseMimeType: "application/json" },
+      });
+
+      const resultado = await model.generateContent(prompt);
+      respuestaCruda = resultado.response.text();
+    }
+
+    let bruto: unknown;
+    try {
+      bruto = JSON.parse(limpiarJson(respuestaCruda));
+    } catch {
+      logger.warn("[agenda] La IA no devolvió JSON válido");
+      return NextResponse.json(
+        {
+          error:
+            "No se pudo interpretar el texto. Revisa la redacción o rellena " +
+            "los campos a mano.",
+        },
+        { status: 422 }
+      );
+    }
+
+    const validada = SalidaSchema.safeParse(bruto);
+    if (!validada.success) {
+      logger.warn("[agenda] La respuesta de la IA no tiene la forma esperada");
+      return NextResponse.json(
+        { error: "No se pudo interpretar el texto. Rellena los campos a mano." },
+        { status: 422 }
+      );
+    }
+
+    logger.info("[agenda] Texto interpretado", {
+      proveedor,
+      recursos: validada.data.recursos.length,
+    });
+
+    return NextResponse.json({
+      data: validada.data,
+      // Lo que la persona escribió, para guardarlo junto al agendamiento y
+      // poder comparar después con lo que se entendió.
+      texto_original: texto,
+    });
+  } catch (error) {
+    logger.error("[agenda] Error interpretando el texto", { error: String(error) });
+    return NextResponse.json(
+      { error: "No se pudo interpretar el texto." },
+      { status: 500 }
+    );
   }
 }

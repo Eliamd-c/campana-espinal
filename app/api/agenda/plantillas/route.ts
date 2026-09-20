@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { exigirPermiso } from '@/lib/auth/permisos-ruta';
+import { PERMISOS } from '@/lib/permisos';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
-    const auth = await exigirPermiso('agenda.ver' as any);
+    const auth = await exigirPermiso(PERMISOS.AGENDA_VER);
     if (!auth.ok) return auth.respuesta;
     
     // Lista plantillas activas
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const auth = await exigirPermiso('agenda.plantillas' as any);
+    const auth = await exigirPermiso(PERMISOS.AGENDA_PLANTILLAS);
     if (!auth.ok) return auth.respuesta;
     
     const body = await request.json();

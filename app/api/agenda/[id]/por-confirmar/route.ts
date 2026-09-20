@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { exigirPermiso } from '@/lib/auth/permisos-ruta';
+import { PERMISOS } from '@/lib/permisos';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const auth = await exigirPermiso('agenda.editar' as any);
+    const auth = await exigirPermiso(PERMISOS.AGENDA_EDITAR);
     if (!auth.ok) return auth.respuesta;
     
     const body = await request.json(); // { campo: string }
@@ -27,7 +28,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
-    const auth = await exigirPermiso('agenda.editar' as any);
+    const auth = await exigirPermiso(PERMISOS.AGENDA_EDITAR);
     if (!auth.ok) return auth.respuesta;
     
     const body = await request.json(); // { campo: string }
