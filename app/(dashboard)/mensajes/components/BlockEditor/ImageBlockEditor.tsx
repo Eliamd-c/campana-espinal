@@ -2,7 +2,6 @@
 
 import { useState, useRef } from "react";
 import { UploadCloud, RefreshCw, XCircle, CheckCircle2 } from "lucide-react";
-import { supabaseClient } from "@/lib/supabaseClient";
 
 export default function ImageBlockEditor({ config, onActualizar }: any) {
   const [subiendoArchivo, setSubiendoArchivo] = useState(false);
@@ -14,23 +13,23 @@ export default function ImageBlockEditor({ config, onActualizar }: any) {
 
     setSubiendoArchivo(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
-      const filePath = `${fileName}`;
+      /**
+       * La subida pasa por el servidor, que exige sesión y comprueba el
+       * contenido real del archivo. Antes se subía directamente desde aquí
+       * con la clave pública de Supabase, lo que dejaba el almacenamiento de
+       * la campaña abierto a cualquiera que leyera el código de la página.
+       */
+      const cuerpo = new FormData();
+      cuerpo.append("archivo", file);
 
-      const { data, error } = await supabaseClient.storage
-        .from('media')
-        .upload(filePath, file);
+      const res = await fetch("/api/media/subir", { method: "POST", body: cuerpo });
+      const json = await res.json();
 
-      if (error) {
-        throw new Error(error.message + (error.message.includes("Bucket not found") ? " (Por favor crea el bucket 'media' y hazlo público)" : ""));
+      if (!res.ok) {
+        throw new Error(json.error ?? "No se pudo subir el archivo.");
       }
 
-      const { data: publicUrlData } = supabaseClient.storage
-        .from('media')
-        .getPublicUrl(filePath);
-
-      onActualizar({ ...config, url: publicUrlData.publicUrl });
+      onActualizar({ ...config, url: json.url });
     } catch (error: any) {
       alert("Error subiendo archivo: " + error.message);
     } finally {

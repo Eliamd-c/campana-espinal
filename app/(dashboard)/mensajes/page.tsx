@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Send, Users, CheckCircle2, Image as ImageIcon, ListPlus, Smartphone, BarChart3, ChevronRight, ChevronLeft, Search, RefreshCw, XCircle, Clock, UploadCloud, Flame, Zap } from "lucide-react";
-import { supabaseClient } from "@/lib/supabaseClient";
 import { convertBlocksToWhatsApp } from "@/lib/message-builder/converters";
 import MessageBuilder from "./components/MessageBuilder";
 
