@@ -44,6 +44,20 @@ model User {
   emailVerified DateTime?
   image         String?
   role          String    @default("coordinador") // "admin" | "coordinador"
+
+  /// Credenciales de acceso al panel. `passwordHash` guarda un hash bcrypt:
+  /// nunca la contrasena en claro. Un usuario sin hash no puede entrar.
+  username      String?   @unique
+  passwordHash  String?   @map("password_hash")
+  activo        Boolean   @default(true)
+  ultimoAcceso  DateTime? @map("ultimo_acceso")
+
+  /// Se incrementa al desactivar la cuenta o cambiar la contrasena. El token
+  /// de sesion guarda el valor con el que se emitio: si no coincide, la
+  /// sesion deja de valer al instante. Sin esto, desactivar a alguien no le
+  /// echaba del panel hasta que su token caducara.
+  tokenVersion  Int       @default(0) @map("token_version")
+
   accounts      Account[]
   sessions      Session[]
 }

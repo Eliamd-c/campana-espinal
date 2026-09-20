@@ -1,4 +1,5 @@
 import { getServerSession } from "next-auth/next";
+import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { DashboardHeader } from "./components/DashboardHeader";
@@ -12,6 +13,12 @@ export default async function DashboardLayout({
 }) {
   // Fetch session on the server for ultra-fast initial paint
   const session = await getServerSession(authOptions);
+
+  // Segunda capa tras el middleware: si este layout se renderizara sin sesion,
+  // el dashboard entero quedaria a la vista. No se pinta nada sin sesion.
+  if (!session) {
+    redirect("/login");
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row">
