@@ -132,6 +132,19 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
   const idMensaje = mensaje.key.id;
   if (!idMensaje) return;
 
+  /**
+   * Nada demasiado viejo.
+   *
+   * Al reconectar, WhatsApp entrega junto lo que quedó pendiente y parte del
+   * historial. Lo pendiente hay que atenderlo —puede llevar horas esperando si
+   * el alojamiento durmió la aplicación—, pero contestar a una conversación de
+   * hace tres días sería desconcertante para quien la escribió.
+   */
+  const segundos = Number(mensaje.messageTimestamp ?? 0);
+  if (segundos > 0 && Date.now() / 1000 - segundos > ANTIGUEDAD_MAXIMA_S) {
+    return;
+  }
+
   const texto = textoDelMensaje(mensaje);
 
   /**
@@ -214,6 +227,13 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
       `pero aún no puedo actuar sobre ello.`,
   });
 }
+
+/**
+ * Hasta dónde se mira atrás al reconectar. Un día: en el alojamiento
+ * compartido un mensaje puede llevar horas esperando a que la aplicación
+ * despierte, y esas horas hay que cubrirlas.
+ */
+const ANTIGUEDAD_MAXIMA_S = 24 * 3600;
 
 /** 10 s, 20 s, 40 s… hasta un tope de 5 minutos. */
 const RETRASO_BASE_MS = 10_000;
@@ -358,12 +378,19 @@ export async function abrirLinea(lineaId: number): Promise<void> {
 
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
       /**
-       * `notify` es lo que llega en vivo. El otro tipo, `append`, es historial
-       * que WhatsApp vuelca al sincronizar: son mensajes viejos, y responder a
-       * una conversación de hace tres días al reconectar sería desconcertante.
+       * Se atienden los dos tipos, y esto no es un descuido.
+       *
+       * `notify` es lo que llega con la conexión abierta. `append` es lo que
+       * WhatsApp entrega al reconectar, tanto lo que quedó pendiente mientras
+       * la aplicación dormía como historial antiguo al sincronizar. Aquí la
+       * aplicación se duerme sola, así que casi todo lo que de verdad importa
+       * llega como `append`: descartarlo dejaba la línea muda salvo que se le
+       * escribiera justo con el socket abierto.
+       *
+       * Lo que evita contestar conversaciones viejas no es el tipo, es la
+       * antigüedad del mensaje, que se comprueba más abajo, más el registro de
+       * los ya atendidos.
        */
-      if (type !== "notify") return;
-
       for (const mensaje of messages) {
         /**
          * Uno a uno y capturando cada fallo por separado: un mensaje con una
