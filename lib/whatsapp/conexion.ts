@@ -18,6 +18,7 @@ import {
   tieneCredenciales,
 } from "./auth-postgres";
 import { responderAgenda } from "./agentes/agenda";
+import { responderDatos } from "./agentes/datos";
 import {
   ErrorTranscripcion,
   MAX_SEGUNDOS_AUDIO,
@@ -328,13 +329,10 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
   try {
     const historial = await cargarHistorial(sesion, cual);
 
-    if (cual === "agenda") {
-      respuesta = await responderAgenda(texto, historial, autorizado, deVoz);
-    } else {
-      // El agente de consultas a la base llega en la etapa siguiente.
-      respuesta =
-        "Esta línea todavía no tiene su agente conectado. Pregúntale a la de agenda mientras tanto.";
-    }
+    respuesta =
+      cual === "agenda"
+        ? await responderAgenda(texto, historial, autorizado, deVoz)
+        : await responderDatos(texto, historial, autorizado, deVoz);
   } catch (error) {
     /**
      * Si el modelo falla —sin cupo, sin clave, caído— se responde igualmente.
