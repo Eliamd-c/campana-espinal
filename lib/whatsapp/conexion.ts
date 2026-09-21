@@ -4,6 +4,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   jidNormalizedUser,
   makeCacheableSignalKeyStore,
+  type WAMessage,
   type WASocket,
 } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
@@ -15,6 +16,13 @@ import {
   estadoAuthPostgres,
   tieneCredenciales,
 } from "./auth-postgres";
+import {
+  AGENTES,
+  buscarAutorizado,
+  esAgenteValido,
+  marcarAtendido,
+  numeroDeJid,
+} from "./autorizados";
 
 /**
  * Conexión con WhatsApp: una línea, un socket, un solo intento a la vez.
@@ -74,6 +82,129 @@ const conexiones: Map<number, Conexion> = (global_.conexionesWa ??= new Map());
 const registroBaileys = pino({ level: "silent" });
 
 const sesionDe = (lineaId: number) => `linea-${lineaId}`;
+
+/**
+ * Conversaciones que la línea nunca atiende, sea quien sea el remitente.
+ *
+ * Los grupos quedan fuera a propósito: un mensaje de grupo lo lee todo el
+ * grupo, así que una respuesta con datos de la campaña se publicaría ante
+ * gente que nadie autorizó. Si alguien de la lista escribe desde un grupo, no
+ * se le contesta ahí.
+ */
+function conversacionIgnorada(jid: string): boolean {
+  return (
+    jid.endsWith("@g.us") || // grupos
+    jid.endsWith("@broadcast") || // listas de difusión y estados
+    jid.endsWith("@newsletter") // canales
+  );
+}
+
+/** El texto del mensaje, venga en la forma que venga. */
+function textoDelMensaje(mensaje: WAMessage): string {
+  const m = mensaje.message;
+  if (!m) return "";
+  return (
+    m.conversation ||
+    m.extendedTextMessage?.text ||
+    m.imageMessage?.caption ||
+    m.videoMessage?.caption ||
+    m.documentMessage?.caption ||
+    ""
+  ).trim();
+}
+
+/**
+ * Atiende un mensaje entrante.
+ *
+ * El orden de las comprobaciones no es casual. Primero se descarta lo que no
+ * es una conversación con una persona, después se mira si el remitente está
+ * autorizado —y si no lo está, se calla del todo—, y solo entonces se anota
+ * como atendido. Anotarlo antes llenaría la tabla con el correo basura de
+ * desconocidos.
+ */
+async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessage) {
+  const jid = mensaje.key.remoteJid;
+  if (!jid || mensaje.key.fromMe || conversacionIgnorada(jid)) return;
+
+  const idMensaje = mensaje.key.id;
+  if (!idMensaje) return;
+
+  const texto = textoDelMensaje(mensaje);
+  const numero = numeroDeJid(jid);
+
+  const autorizado = await buscarAutorizado(lineaId, numero);
+
+  if (!autorizado) {
+    /**
+     * Silencio absoluto: ni respuesta, ni marca de leído, ni «escribiendo».
+     * Cualquier reacción le confirma a un desconocido que detrás del número
+     * hay un programa. Pero queda registro: alguien tanteando las líneas de
+     * la campaña es algo que conviene saber.
+     */
+    logger.warn("[whatsapp] Mensaje de número no autorizado, ignorado", {
+      lineaId,
+      numero,
+      longitud: texto.length,
+    });
+    return;
+  }
+
+  if (!(await marcarAtendido(lineaId, idMensaje))) {
+    logger.info("[whatsapp] Mensaje repetido, ya estaba atendido", {
+      lineaId,
+      numero,
+      idMensaje,
+    });
+    return;
+  }
+
+  const linea = await prisma.lineaWhatsapp.findUnique({
+    where: { id: lineaId },
+    select: { agente: true },
+  });
+
+  if (!esAgenteValido(linea?.agente)) {
+    /**
+     * Línea conectada pero sin agente asignado. No se responde: la línea
+     * todavía no es de nadie, y contestar «no tengo agente» es una respuesta
+     * que no ayuda a quien escribe ni a quien la configura.
+     */
+    logger.warn("[whatsapp] Llegó un mensaje a una línea sin agente asignado", {
+      lineaId,
+      numero,
+    });
+    return;
+  }
+
+  // A quien sí está autorizado se le marca leído: sabe que su mensaje entró.
+  try {
+    await sock.readMessages([mensaje.key]);
+  } catch {
+    /* no es grave si falla: es cortesía, no funcionamiento */
+  }
+
+  logger.info("[whatsapp] Mensaje aceptado", {
+    lineaId,
+    agente: linea!.agente,
+    numero,
+    usuario: autorizado.usuarioId,
+    longitud: texto.length,
+  });
+
+  /**
+   * Aquí entrará el agente en la siguiente etapa. Por ahora se acusa recibo,
+   * que es lo que permite comprobar el cableado de punta a punta: que el
+   * mensaje llegó, que el filtro dejó pasar a quien debía y que la línea sabe
+   * responder.
+   */
+  const agente = AGENTES[linea!.agente as keyof typeof AGENTES];
+  await sock.sendMessage(jid, {
+    text:
+      `Recibido, ${autorizado.nombre || "hola"}. Esta es la línea de ` +
+      `${agente.etiqueta}, y todavía está en montaje: leo lo que me escribes ` +
+      `pero aún no puedo actuar sobre ello.`,
+  });
+}
 
 /** 10 s, 20 s, 40 s… hasta un tope de 5 minutos. */
 const RETRASO_BASE_MS = 10_000;
@@ -215,6 +346,30 @@ export async function abrirLinea(lineaId: number): Promise<void> {
     conexion.sock = sock;
     conexion.requiereQr = false;
     sock.ev.on("creds.update", guardarCreds);
+
+    sock.ev.on("messages.upsert", async ({ messages, type }) => {
+      /**
+       * `notify` es lo que llega en vivo. El otro tipo, `append`, es historial
+       * que WhatsApp vuelca al sincronizar: son mensajes viejos, y responder a
+       * una conversación de hace tres días al reconectar sería desconcertante.
+       */
+      if (type !== "notify") return;
+
+      for (const mensaje of messages) {
+        /**
+         * Uno a uno y capturando cada fallo por separado: un mensaje con una
+         * forma rara no puede impedir que se atiendan los demás.
+         */
+        try {
+          await atenderMensaje(lineaId, sock, mensaje);
+        } catch (error) {
+          logger.error("[whatsapp] Error atendiendo un mensaje", {
+            lineaId,
+            error: String(error),
+          });
+        }
+      }
+    });
 
     sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;

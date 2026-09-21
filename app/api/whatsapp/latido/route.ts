@@ -5,6 +5,7 @@ import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { reabrirLineasVinculadas } from "@/lib/whatsapp/conexion";
+import { podarAtendidos } from "@/lib/whatsapp/autorizados";
 
 /**
  * Latido: mantiene viva la aplicación y, con ella, las líneas de WhatsApp.
@@ -56,8 +57,23 @@ export async function GET(req: NextRequest) {
 
   try {
     const lineas = await reabrirLineasVinculadas();
+
+    /**
+     * Se aprovecha el paso para podar el registro de mensajes ya atendidos.
+     * Pasadas unas horas WhatsApp no reentrega nada, asi que esas filas solo
+     * ocupan sitio. Si falla, no se estropea el latido por una limpieza.
+     */
+    let podados = 0;
+    try {
+      podados = await podarAtendidos();
+    } catch (error) {
+      logger.warn("[whatsapp] No se pudo podar el registro de mensajes", {
+        error: String(error),
+      });
+    }
+
     return NextResponse.json({
-      data: { momento: new Date().toISOString(), lineas },
+      data: { momento: new Date().toISOString(), lineas, podados },
     });
   } catch (error) {
     logger.error("[whatsapp] Falló el latido", { error: String(error) });

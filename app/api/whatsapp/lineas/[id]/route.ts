@@ -9,6 +9,7 @@ import { registrarAuditoria } from "@/lib/audit";
 import { exigirPermiso } from "@/lib/auth/permisos-ruta";
 import { PERMISOS } from "@/lib/permisos";
 import { abrirLinea, cerrarLinea, desvincularLinea } from "@/lib/whatsapp/conexion";
+import { esAgenteValido } from "@/lib/whatsapp/autorizados";
 
 /**
  * Acciones sobre una línea: conectar, cerrar y desvincular.
@@ -27,6 +28,57 @@ import { abrirLinea, cerrarLinea, desvincularLinea } from "@/lib/whatsapp/conexi
 const AccionSchema = z.object({
   accion: z.enum(["conectar", "cerrar", "desvincular"]),
 });
+
+/**
+ * Cambio de configuración de la línea. El agente puede quedar vacío, que
+ * significa «conectada pero no contesta a nadie»: es la forma de silenciar
+ * una línea sin desvincularla ni tumbar su sesión.
+ */
+const AjusteSchema = z.object({
+  agente: z.string().max(40).nullable(),
+});
+
+/** PATCH: qué agente atiende esta línea. */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const permiso = await exigirPermiso(PERMISOS.WHATSAPP_GESTIONAR);
+  if (!permiso.ok) return permiso.respuesta;
+
+  const lineaId = Number(params.id);
+  if (!Number.isInteger(lineaId) || lineaId <= 0) {
+    return NextResponse.json({ error: "Línea no válida" }, { status: 400 });
+  }
+
+  const cuerpo = AjusteSchema.safeParse(await req.json().catch(() => null));
+  if (!cuerpo.success) {
+    return NextResponse.json({ error: "Datos no válidos" }, { status: 400 });
+  }
+
+  const { agente } = cuerpo.data;
+  if (agente !== null && !esAgenteValido(agente)) {
+    return NextResponse.json({ error: "Ese agente no existe" }, { status: 400 });
+  }
+
+  try {
+    const linea = await prisma.lineaWhatsapp.update({
+      where: { id: lineaId },
+      data: { agente },
+      select: { id: true, nombre: true, agente: true },
+    });
+
+    await registrarAuditoria(permiso.quien.usuarioId, "whatsapp_linea_agente", {
+      linea_id: lineaId,
+      agente: agente ?? "(ninguno)",
+    });
+
+    return NextResponse.json({ data: linea });
+  } catch (error) {
+    logger.error("[whatsapp] Error asignando agente", { lineaId, error: String(error) });
+    return NextResponse.json({ error: "No se pudo guardar." }, { status: 500 });
+  }
+}
 
 export async function POST(
   req: NextRequest,

@@ -66,6 +66,8 @@ model User {
 
   accounts      Account[]
   sessions      Session[]
+  /// Números de WhatsApp que hablan en nombre de esta cuenta.
+  whatsapp      WhatsappAutorizado[]
 }
 
 model VerificationToken {
@@ -356,6 +358,9 @@ model LineaWhatsapp {
   id                    Int       @id @default(autoincrement())
   numero_telefono       String?   @db.VarChar(20)
   nombre                String?   @db.VarChar(80)
+  /// Qué agente atiende esta línea: 'agenda', 'datos'… Nulo significa que la
+  /// línea está conectada pero no contesta a nadie, que es como deben nacer.
+  agente                String?   @db.VarChar(40)
   estado                String?   @default("desconectado") @db.VarChar(20) // desconectado, conectado, baneado, qr_listo
   qr_actual             String?   @db.Text
   proxyUrl              String?   @db.Text
@@ -366,8 +371,56 @@ model LineaWhatsapp {
   fecha_creacion        DateTime  @default(now())
   
   mensajes              Mensaje[]
+  autorizados           WhatsappAutorizado[]
+  vistos                WhatsappMensajeVisto[]
 
   @@map("lineas_whatsapp")
+}
+
+/// Quién puede hablarle a una línea.
+///
+/// La lista es por línea y no global: así se puede dejar a alguien usar la
+/// agenda sin darle acceso a consultar el padrón. Vive en la base y no en un
+/// archivo porque cambiarla no debe obligar a reiniciar, y reiniciar tumba el
+/// socket de WhatsApp.
+model WhatsappAutorizado {
+  id             Int      @id @default(autoincrement())
+  linea_id       Int
+  /// Formato internacional sin signos: 573133288298.
+  numero         String   @db.VarChar(20)
+  /// Para reconocerlo en el panel: «Eliam — desarrollo».
+  nombre         String?  @db.VarChar(80)
+  /// La cuenta del panel a la que equivale. El agente responde con los
+  /// permisos de esa cuenta y la auditoría dice quién preguntó.
+  usuario_id     String?  @db.VarChar(80)
+  activo         Boolean  @default(true)
+  autorizado_por String?  @db.VarChar(80)
+  fecha_alta     DateTime @default(now())
+
+  linea   LineaWhatsapp @relation(fields: [linea_id], references: [id], onDelete: Cascade)
+  usuario User?         @relation(fields: [usuario_id], references: [id], onDelete: SetNull)
+
+  @@unique([linea_id, numero])
+  @@index([numero])
+  @@map("whatsapp_autorizados")
+}
+
+/// Mensajes ya atendidos.
+///
+/// Al despertar, WhatsApp reentrega lo que llegó mientras la aplicación
+/// dormía, incluido lo que ya se proceso. Sin este registro, quien escribe una
+/// vez recibe tres respuestas.
+model WhatsappMensajeVisto {
+  id         Int      @id @default(autoincrement())
+  linea_id   Int
+  mensaje_wa String   @db.VarChar(120)
+  fecha      DateTime @default(now())
+
+  linea LineaWhatsapp @relation(fields: [linea_id], references: [id], onDelete: Cascade)
+
+  @@unique([linea_id, mensaje_wa])
+  @@index([fecha])
+  @@map("whatsapp_mensajes_vistos")
 }
 
 model WhatsappAuthState {

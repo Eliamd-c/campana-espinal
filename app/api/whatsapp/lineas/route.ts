@@ -42,17 +42,21 @@ export async function GET() {
         id: true,
         nombre: true,
         numero_telefono: true,
+        agente: true,
         estado: true,
         qr_actual: true,
         ultima_conexion: true,
+        _count: { select: { autorizados: true } },
       },
     });
 
     return NextResponse.json({
       data: lineas.map((linea) => {
         const memoria = estadoEnMemoria(linea.id);
+        const { _count, ...resto } = linea;
         return {
-          ...linea,
+          ...resto,
+          autorizados: _count.autorizados,
           /**
            * El QR solo se entrega mientras sirve para algo. Es la llave para
            * vincular el número: no tiene por qué estar viajando al navegador

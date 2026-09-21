@@ -1,7 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, RefreshCw, Power, Unlink, Smartphone } from 'lucide-react';
+import { Plus, RefreshCw, Power, Unlink, Smartphone, X, ShieldCheck } from 'lucide-react';
+
+/** Debe coincidir con el catálogo de lib/whatsapp/autorizados.ts. */
+const AGENTES = [
+  { valor: 'agenda', etiqueta: 'Agenda' },
+  { valor: 'datos', etiqueta: 'Consultas a la base' },
+];
 
 /**
  * Líneas de WhatsApp.
@@ -18,13 +24,29 @@ interface Linea {
   id: number;
   nombre: string | null;
   numero_telefono: string | null;
+  agente: string | null;
   estado: string | null;
   qr_actual: string | null;
   ultima_conexion: string | null;
+  autorizados: number;
   viva: boolean;
   detalle: string | null;
   requiere_qr: boolean;
   intentos_fallidos: number;
+}
+
+interface Autorizado {
+  id: number;
+  numero: string;
+  nombre: string | null;
+  activo: boolean;
+  usuario: { username: string | null; activo: boolean } | null;
+}
+
+interface Cuenta {
+  id: string;
+  username: string | null;
+  name: string | null;
 }
 
 const ASPECTO: Record<string, { texto: string; clase: string }> = {
@@ -88,6 +110,21 @@ export default function LineasPage() {
       setAviso({ tipo: 'error', texto: String((error as Error).message) });
     } finally {
       setCreando(false);
+    }
+  }
+
+  async function cambiarAgente(id: number, agente: string) {
+    try {
+      const res = await fetch(`/api/whatsapp/lineas/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agente: agente || null }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'No se pudo guardar');
+      cargar();
+    } catch (error) {
+      setAviso({ tipo: 'error', texto: String((error as Error).message) });
     }
   }
 
@@ -213,6 +250,32 @@ export default function LineasPage() {
                   </div>
                 )}
 
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Agente que atiende
+                  </label>
+                  <select
+                    value={linea.agente ?? ''}
+                    onChange={(e) => cambiarAgente(linea.id, e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">Ninguno — no responde a nadie</option>
+                    {AGENTES.map((a) => (
+                      <option key={a.valor} value={a.valor}>
+                        {a.etiqueta}
+                      </option>
+                    ))}
+                  </select>
+                  {!linea.agente && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      La línea está conectada pero calla. Asígnale un agente para que
+                      empiece a responder.
+                    </p>
+                  )}
+                </div>
+
+                <BloqueAutorizados lineaId={linea.id} alCambiar={cargar} />
+
                 {linea.ultima_conexion && (
                   <p className="text-xs text-gray-400">
                     Última conexión: {new Date(linea.ultima_conexion).toLocaleString('es-CO')}
@@ -244,6 +307,165 @@ export default function LineasPage() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Los números que pueden hablarle a esta línea.
+ *
+ * Carga bajo demanda y no con el resto de la pantalla, que se refresca cada
+ * tres segundos por el QR: no tiene sentido volver a pedir la lista cada vez.
+ * Se recarga sola cuando se agrega o se quita alguien.
+ */
+function BloqueAutorizados({
+  lineaId,
+  alCambiar,
+}: {
+  lineaId: number;
+  alCambiar: () => void;
+}) {
+  const [autorizados, setAutorizados] = useState<Autorizado[]>([]);
+  const [cuentas, setCuentas] = useState<Cuenta[]>([]);
+  const [numero, setNumero] = useState('');
+  const [nombre, setNombre] = useState('');
+  const [cuentaId, setCuentaId] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+
+  const cargar = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/whatsapp/lineas/${lineaId}/autorizados`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'No se pudo leer la lista');
+      setAutorizados(json.data.autorizados);
+      setCuentas(json.data.cuentas);
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  }, [lineaId]);
+
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
+
+  async function agregar() {
+    setError(null);
+    setGuardando(true);
+    try {
+      const res = await fetch(`/api/whatsapp/lineas/${lineaId}/autorizados`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero, nombre, usuario_id: cuentaId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'No se pudo autorizar');
+      setNumero('');
+      setNombre('');
+      setCuentaId('');
+      cargar();
+      alCambiar();
+    } catch (e) {
+      setError(String((e as Error).message));
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  async function quitar(id: number, num: string) {
+    if (!window.confirm(`Quitar el ${num}? Dejara de recibir respuesta de esta linea.`)) return;
+    try {
+      const res = await fetch(
+        `/api/whatsapp/lineas/${lineaId}/autorizados?autorizado_id=${id}`,
+        { method: 'DELETE' }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'No se pudo quitar');
+      cargar();
+      alCambiar();
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  }
+
+  return (
+    <div className="border-t border-gray-100 pt-3 space-y-2">
+      <p className="text-xs font-medium text-gray-600 flex items-center gap-1.5">
+        <ShieldCheck size={14} className="text-gray-400" />
+        Numeros autorizados
+      </p>
+
+      {autorizados.length === 0 ? (
+        <p className="text-xs text-gray-500">
+          Nadie autorizado todavia. La linea ignora en silencio todo lo que le llegue.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {autorizados.map((a) => (
+            <li
+              key={a.id}
+              className="flex items-center justify-between gap-2 text-xs bg-gray-50 rounded-lg px-2.5 py-1.5"
+            >
+              <span className="min-w-0">
+                <span className="font-medium text-gray-800">+{a.numero}</span>
+                {a.nombre && <span className="text-gray-500"> — {a.nombre}</span>}
+                <span className="text-gray-400 block">
+                  responde como {a.usuario?.username ?? 'cuenta no disponible'}
+                  {a.usuario && !a.usuario.activo && ' (cuenta desactivada)'}
+                </span>
+              </span>
+              <button
+                onClick={() => quitar(a.id, a.numero)}
+                className="text-gray-400 hover:text-red-600 shrink-0"
+                aria-label="Quitar"
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input
+          value={numero}
+          onChange={(e) => setNumero(e.target.value)}
+          placeholder="573133288298"
+          className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs"
+        />
+        <input
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          placeholder="Nombre (opcional)"
+          className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs"
+        />
+        <select
+          value={cuentaId}
+          onChange={(e) => setCuentaId(e.target.value)}
+          className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs"
+        >
+          <option value="">Responde como…</option>
+          {cuentas.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.username || c.name || c.id}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={agregar}
+          disabled={guardando || !numero || !cuentaId}
+          className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+        >
+          Autorizar
+        </button>
+      </div>
+
+      <p className="text-xs text-gray-400">
+        El agente responde con los permisos de la cuenta elegida, igual que si esa
+        persona entrara al panel.
+      </p>
+
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
 }
