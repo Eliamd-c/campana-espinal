@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { reabrirLineasVinculadas } from "@/lib/whatsapp/conexion";
 import { podarAtendidos } from "@/lib/whatsapp/autorizados";
+import { podarMemoria } from "@/lib/whatsapp/memoria";
 
 /**
  * Latido: mantiene viva la aplicación y, con ella, las líneas de WhatsApp.
@@ -66,6 +67,7 @@ export async function GET(req: NextRequest) {
     let podados = 0;
     try {
       podados = await podarAtendidos();
+      await podarMemoria();
     } catch (error) {
       logger.warn("[whatsapp] No se pudo podar el registro de mensajes", {
         error: String(error),

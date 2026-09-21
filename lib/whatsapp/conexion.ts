@@ -16,6 +16,8 @@ import {
   estadoAuthPostgres,
   tieneCredenciales,
 } from "./auth-postgres";
+import { responderAgenda } from "./agentes/agenda";
+import { cargarHistorial, guardarTurno, sesionDeChat } from "./memoria";
 import {
   AGENTES,
   anotarResultado,
@@ -242,20 +244,68 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
     longitud: texto.length,
   });
 
+  const cual = linea!.agente as keyof typeof AGENTES;
+  const sesion = sesionDeChat(lineaId, autorizado.numero);
+
   /**
-   * Aquí entrará el agente en la siguiente etapa. Por ahora se acusa recibo,
-   * que es lo que permite comprobar el cableado de punta a punta: que el
-   * mensaje llegó, que el filtro dejó pasar a quien debía y que la línea sabe
-   * responder.
+   * Un mensaje vacío —una foto sin pie, una nota de voz— no se le pasa al
+   * modelo: no hay nada que interpretar y contestaría cualquier cosa.
    */
-  const agente = AGENTES[linea!.agente as keyof typeof AGENTES];
+  if (!texto) {
+    anotarSuceso(lineaId, "mensaje sin texto");
+    await sock.sendMessage(jid, {
+      text: "Por ahora solo entiendo mensajes escritos. ¿Me lo cuentas en texto?",
+    });
+    return;
+  }
+
+  anotarSuceso(lineaId, `pensando (${cual}) para ${numeroVisible}`);
+
+  let respuesta: string;
+  try {
+    const historial = await cargarHistorial(sesion, cual);
+
+    if (cual === "agenda") {
+      respuesta = await responderAgenda(texto, historial, autorizado);
+    } else {
+      // El agente de consultas a la base llega en la etapa siguiente.
+      respuesta =
+        "Esta línea todavía no tiene su agente conectado. Pregúntale a la de agenda mientras tanto.";
+    }
+  } catch (error) {
+    /**
+     * Si el modelo falla —sin cupo, sin clave, caído— se responde igualmente.
+     * Un silencio es indistinguible de «no me llegó», y quien escribe se queda
+     * esperando algo que no va a venir.
+     */
+    anotarSuceso(lineaId, `ERROR del agente: ${String(error).slice(0, 200)}`);
+    logger.error("[whatsapp] El agente no pudo responder", {
+      lineaId,
+      agente: cual,
+      error: String(error),
+    });
+    await sock.sendMessage(jid, {
+      text: "Se me cruzaron los cables y no pude procesarlo. ¿Me lo repites en un momento?",
+    });
+    return;
+  }
+
   anotarSuceso(lineaId, `respondiendo a ${numeroVisible}`);
-  await sock.sendMessage(jid, {
-    text:
-      `Recibido, ${autorizado.nombre || "hola"}. Esta es la línea de ` +
-      `${agente.etiqueta}, y todavía está en montaje: leo lo que me escribes ` +
-      `pero aún no puedo actuar sobre ello.`,
-  });
+  await sock.sendMessage(jid, { text: respuesta });
+
+  /**
+   * La conversación se guarda DESPUÉS de enviar. Si guardar fallara, es peor
+   * perder la respuesta que perder el recuerdo de haberla dado.
+   */
+  try {
+    await guardarTurno(sesion, cual, "user", texto);
+    await guardarTurno(sesion, cual, "assistant", respuesta);
+  } catch (error) {
+    logger.warn("[whatsapp] No se pudo guardar la conversación", {
+      lineaId,
+      error: String(error),
+    });
+  }
 }
 
 /**
