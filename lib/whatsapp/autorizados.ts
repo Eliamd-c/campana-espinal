@@ -114,6 +114,35 @@ export async function buscarAutorizado(
 }
 
 /**
+ * Busca a quien escribe probando todos los identificadores que trae el
+ * mensaje.
+ *
+ * WhatsApp está migrando a los identificadores LID, que no contienen el número
+ * de teléfono: un mismo contacto puede llegar como `573133288298@s.whatsapp.net`
+ * o como `192...@lid`. Baileys entrega los dos —uno en `remoteJid` y el otro en
+ * `remoteJidAlt`— pero no siempre en el mismo orden.
+ *
+ * Comprobar solo el primero hacía que la lista blanca no reconociera ni al
+ * propio gerente, y como a un desconocido no se le responde, el efecto era una
+ * línea muda sin ningún error a la vista.
+ */
+export async function buscarAutorizadoPorJids(
+  lineaId: number,
+  jids: (string | null | undefined)[]
+): Promise<{ autorizado: Autorizado | null; numeros: string[] }> {
+  const numeros = Array.from(
+    new Set(jids.filter(Boolean).map((jid) => numeroDeJid(jid as string)).filter(Boolean))
+  );
+
+  for (const numero of numeros) {
+    const autorizado = await buscarAutorizado(lineaId, numero);
+    if (autorizado) return { autorizado, numeros };
+  }
+
+  return { autorizado: null, numeros };
+}
+
+/**
  * Marca un mensaje como atendido y dice si era nuevo.
  *
  * La comprobación es la propia inserción: el índice único de la tabla rechaza
@@ -124,16 +153,40 @@ export async function buscarAutorizado(
  */
 export async function marcarAtendido(
   lineaId: number,
-  mensajeWa: string
+  mensajeWa: string,
+  numero?: string
 ): Promise<boolean> {
   try {
     await prisma.whatsappMensajeVisto.create({
-      data: { linea_id: lineaId, mensaje_wa: mensajeWa },
+      data: { linea_id: lineaId, mensaje_wa: mensajeWa, numero: numero ?? null },
     });
     return true;
   } catch {
     // Violación de la clave única: ya estaba atendido.
     return false;
+  }
+}
+
+/**
+ * Anota qué se hizo con el mensaje: aceptado, no_autorizado, sin_agente.
+ *
+ * Existe porque en alojamiento compartido el registro de la aplicación es un
+ * archivo que nadie lee. Sin esto, un mensaje descartado por la lista blanca
+ * era indistinguible de uno que nunca llegó, y depurar consistia en adivinar.
+ */
+export async function anotarResultado(
+  lineaId: number,
+  mensajeWa: string,
+  resultado: "aceptado" | "no_autorizado" | "sin_agente",
+  numero?: string
+): Promise<void> {
+  try {
+    await prisma.whatsappMensajeVisto.updateMany({
+      where: { linea_id: lineaId, mensaje_wa: mensajeWa },
+      data: { resultado, ...(numero ? { numero } : {}) },
+    });
+  } catch {
+    /* el registro es para mirar, no para que rompa la atención del mensaje */
   }
 }
 

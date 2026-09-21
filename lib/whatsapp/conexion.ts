@@ -18,10 +18,10 @@ import {
 } from "./auth-postgres";
 import {
   AGENTES,
-  buscarAutorizado,
+  anotarResultado,
+  buscarAutorizadoPorJids,
   esAgenteValido,
   marcarAtendido,
-  numeroDeJid,
 } from "./autorizados";
 
 /**
@@ -116,11 +116,14 @@ function textoDelMensaje(mensaje: WAMessage): string {
 /**
  * Atiende un mensaje entrante.
  *
- * El orden de las comprobaciones no es casual. Primero se descarta lo que no
- * es una conversación con una persona, después se mira si el remitente está
- * autorizado —y si no lo está, se calla del todo—, y solo entonces se anota
- * como atendido. Anotarlo antes llenaría la tabla con el correo basura de
- * desconocidos.
+ * Primero se descarta lo que no es una conversación con una persona. Lo que
+ * queda se anota SIEMPRE, aunque venga de un desconocido: esa anotación es a
+ * la vez el control de repetidos y la única forma de ver, desde el panel, qué
+ * llegó y por qué no se contestó. El registro de la aplicación es un archivo
+ * en el servidor que nadie lee.
+ *
+ * Anotar no es responder. A quien no está autorizado se le sigue ignorando en
+ * silencio: sin respuesta, sin marca de leído y sin aparecer escribiendo.
  */
 async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessage) {
   const jid = mensaje.key.remoteJid;
@@ -130,30 +133,33 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
   if (!idMensaje) return;
 
   const texto = textoDelMensaje(mensaje);
-  const numero = numeroDeJid(jid);
 
-  const autorizado = await buscarAutorizado(lineaId, numero);
+  /**
+   * Los dos identificadores del remitente. WhatsApp está migrando a los LID,
+   * que no contienen el número de teléfono, y Baileys entrega el otro en
+   * `remoteJidAlt`. Mirar solo uno dejaba fuera de la lista blanca a gente que
+   * sí estaba en ella.
+   */
+  const alternativo = (mensaje.key as { remoteJidAlt?: string }).remoteJidAlt;
 
-  if (!autorizado) {
-    /**
-     * Silencio absoluto: ni respuesta, ni marca de leído, ni «escribiendo».
-     * Cualquier reacción le confirma a un desconocido que detrás del número
-     * hay un programa. Pero queda registro: alguien tanteando las líneas de
-     * la campaña es algo que conviene saber.
-     */
-    logger.warn("[whatsapp] Mensaje de número no autorizado, ignorado", {
+  const { autorizado, numeros } = await buscarAutorizadoPorJids(lineaId, [jid, alternativo]);
+  const numeroVisible = numeros.join(" / ") || "desconocido";
+
+  if (!(await marcarAtendido(lineaId, idMensaje, numeroVisible))) {
+    logger.info("[whatsapp] Mensaje repetido, ya estaba atendido", {
       lineaId,
-      numero,
-      longitud: texto.length,
+      numero: numeroVisible,
+      idMensaje,
     });
     return;
   }
 
-  if (!(await marcarAtendido(lineaId, idMensaje))) {
-    logger.info("[whatsapp] Mensaje repetido, ya estaba atendido", {
+  if (!autorizado) {
+    await anotarResultado(lineaId, idMensaje, "no_autorizado", numeroVisible);
+    logger.warn("[whatsapp] Mensaje de número no autorizado, ignorado", {
       lineaId,
-      numero,
-      idMensaje,
+      numero: numeroVisible,
+      longitud: texto.length,
     });
     return;
   }
@@ -169,9 +175,10 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
      * todavía no es de nadie, y contestar «no tengo agente» es una respuesta
      * que no ayuda a quien escribe ni a quien la configura.
      */
+    await anotarResultado(lineaId, idMensaje, "sin_agente", numeroVisible);
     logger.warn("[whatsapp] Llegó un mensaje a una línea sin agente asignado", {
       lineaId,
-      numero,
+      numero: numeroVisible,
     });
     return;
   }
@@ -183,10 +190,12 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
     /* no es grave si falla: es cortesía, no funcionamiento */
   }
 
+  await anotarResultado(lineaId, idMensaje, "aceptado", numeroVisible);
+
   logger.info("[whatsapp] Mensaje aceptado", {
     lineaId,
     agente: linea!.agente,
-    numero,
+    numero: numeroVisible,
     usuario: autorizado.usuarioId,
     longitud: texto.length,
   });

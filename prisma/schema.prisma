@@ -414,12 +414,17 @@ model WhatsappMensajeVisto {
   id         Int      @id @default(autoincrement())
   linea_id   Int
   mensaje_wa String   @db.VarChar(120)
+  /// Quien escribio, tal como se pudo identificar.
+  numero     String?  @db.VarChar(30)
+  /// Que paso: recibido, aceptado, no_autorizado, sin_agente.
+  resultado  String   @default("recibido") @db.VarChar(20)
   fecha      DateTime @default(now())
 
   linea LineaWhatsapp @relation(fields: [linea_id], references: [id], onDelete: Cascade)
 
   @@unique([linea_id, mensaje_wa])
   @@index([fecha])
+  @@index([resultado])
   @@map("whatsapp_mensajes_vistos")
 }
 
