@@ -28,15 +28,20 @@ const RUTAS_PUBLICAS = [
 ];
 
 /**
- * Webhooks entrantes.
+ * Llamadas entrantes que no traen sesión, porque no las hace una persona.
  *
- * Vacío a propósito: al retirar la integración de Evolution API no queda
- * ningún proveedor externo que llame a esta aplicación. Cuando se conecte
- * otro, su ruta se añade aquí Y se autentica dentro del handler con
- * `lib/webhooks/verificar.ts`, que sigue disponible: una ruta pública sin
- * secreto compartido es una puerta abierta.
+ * Cada una se autentica dentro de su propio handler con un secreto
+ * compartido: una ruta pública sin secreto es una puerta abierta.
  */
-const WEBHOOKS: string[] = [];
+const WEBHOOKS: string[] = [
+  /**
+   * Latido de las líneas de WhatsApp, que llama el cron del alojamiento para
+   * que la aplicación no se duerma y el socket no se caiga. Comprueba
+   * `WHATSAPP_SECRETO_LATIDO` en tiempo constante y responde 401 sin dar
+   * detalles a quien no lo traiga.
+   */
+  "/api/whatsapp/latido",
+];
 
 
 /**
