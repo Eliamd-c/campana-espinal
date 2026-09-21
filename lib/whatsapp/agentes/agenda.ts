@@ -240,9 +240,23 @@ Cómo trabajas:
 export async function responderAgenda(
   texto: string,
   historial: TurnoNeutro[],
-  quien: Autorizado
+  quien: Autorizado,
+  deVoz = false
 ): Promise<string> {
+  /**
+   * Cuando el mensaje viene de una nota de voz, el agente tiene que saberlo.
+   * Una transcripción se equivoca justo donde más duele: nombres de barrio,
+   * direcciones y cifras. El aviso hace que los repita para que se los
+   * confirmen, en vez de darlos por buenos.
+   */
+  const origen = deVoz
+    ? "\nEl mensaje llega de una NOTA DE VOZ transcrita: puede traer errores en " +
+      "nombres propios, direcciones y cifras. Repite esos datos al confirmar y " +
+      "pide que te los corrijan si no cuadran.\n"
+    : "";
+
   const pregunta = `${INSTRUCCIONES.replace("{{HOY}}", hoyEnBogota())}
+${origen}
 
 ${AVISO_CONTENIDO_EXTERNO}
 

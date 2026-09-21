@@ -3,6 +3,7 @@ import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
   jidNormalizedUser,
+  downloadMediaMessage,
   makeCacheableSignalKeyStore,
   type WAMessage,
   type WASocket,
@@ -17,6 +18,11 @@ import {
   tieneCredenciales,
 } from "./auth-postgres";
 import { responderAgenda } from "./agentes/agenda";
+import {
+  ErrorTranscripcion,
+  MAX_SEGUNDOS_AUDIO,
+  transcribirAudio,
+} from "./transcribir";
 import { cargarHistorial, guardarTurno, sesionDeChat } from "./memoria";
 import {
   AGENTES,
@@ -135,6 +141,37 @@ function textoDelMensaje(mensaje: WAMessage): string {
 }
 
 /**
+ * Convierte una nota de voz en texto, si el mensaje trae una.
+ *
+ * Devuelve `null` cuando no hay audio, y lanza cuando lo hay pero no se pudo
+ * transcribir: quien llama tiene que responder algo, porque callarse ante una
+ * nota de voz es lo mismo que no haberla recibido.
+ */
+async function textoDeNotaDeVoz(
+  sock: WASocket,
+  mensaje: WAMessage
+): Promise<string | null> {
+  const audio = mensaje.message?.audioMessage;
+  if (!audio) return null;
+
+  const buffer = (await downloadMediaMessage(
+    mensaje,
+    "buffer",
+    {},
+    {
+      logger: registroBaileys,
+      reuploadRequest: sock.updateMediaMessage,
+    }
+  )) as Buffer;
+
+  return transcribirAudio(
+    buffer,
+    audio.mimetype || "audio/ogg; codecs=opus",
+    audio.seconds ?? undefined
+  );
+}
+
+/**
  * Atiende un mensaje entrante.
  *
  * Primero se descarta lo que no es una conversación con una persona. Lo que
@@ -173,7 +210,7 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
     return;
   }
 
-  const texto = textoDelMensaje(mensaje);
+  let texto = textoDelMensaje(mensaje);
 
   /**
    * Los dos identificadores del remitente. WhatsApp está migrando a los LID,
@@ -248,13 +285,39 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
   const sesion = sesionDeChat(lineaId, autorizado.numero);
 
   /**
-   * Un mensaje vacío —una foto sin pie, una nota de voz— no se le pasa al
-   * modelo: no hay nada que interpretar y contestaría cualquier cosa.
+   * Si no vino escrito, puede venir hablado. En campaña la gente manda audios,
+   * no párrafos.
+   */
+  let deVoz = false;
+  if (!texto && mensaje.message?.audioMessage) {
+    anotarSuceso(lineaId, "transcribiendo nota de voz");
+    try {
+      const transcrito = await textoDeNotaDeVoz(sock, mensaje);
+      if (transcrito) {
+        texto = transcrito;
+        deVoz = true;
+        anotarSuceso(lineaId, `transcrito (${transcrito.length} caracteres)`);
+      }
+    } catch (error) {
+      const motivo =
+        error instanceof ErrorTranscripcion && error.motivo === "DEMASIADO_LARGO"
+          ? `Esa nota de voz es muy larga (máximo ${MAX_SEGUNDOS_AUDIO / 60} minutos). ¿Me la mandas más corta o por escrito?`
+          : "No pude entender la nota de voz. ¿Me lo escribes?";
+
+      anotarSuceso(lineaId, `ERROR transcribiendo: ${String(error).slice(0, 160)}`);
+      await sock.sendMessage(jid, { text: motivo });
+      return;
+    }
+  }
+
+  /**
+   * Lo que no es ni texto ni voz —una foto sin pie, un documento— no se le
+   * pasa al modelo: no hay nada que interpretar y contestaría cualquier cosa.
    */
   if (!texto) {
     anotarSuceso(lineaId, "mensaje sin texto");
     await sock.sendMessage(jid, {
-      text: "Por ahora solo entiendo mensajes escritos. ¿Me lo cuentas en texto?",
+      text: "Por ahora entiendo mensajes escritos y notas de voz. ¿Me lo cuentas así?",
     });
     return;
   }
@@ -266,7 +329,7 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
     const historial = await cargarHistorial(sesion, cual);
 
     if (cual === "agenda") {
-      respuesta = await responderAgenda(texto, historial, autorizado);
+      respuesta = await responderAgenda(texto, historial, autorizado, deVoz);
     } else {
       // El agente de consultas a la base llega en la etapa siguiente.
       respuesta =
