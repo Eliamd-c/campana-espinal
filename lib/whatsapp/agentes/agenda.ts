@@ -266,8 +266,10 @@ Cómo pedirlo, que es lo que marca la diferencia:
 - Antes de crear algo, RESUME lo que entendiste y pregunta si está bien.
 - En cuanto la persona confirme —"sí", "dale", "guárdalo", "así está bien"—, LLAMA a crear_agendamiento de inmediato. No vuelvas a resumir ni a preguntar: repetir la pregunta después de un sí deja a la persona atrapada en un bucle y sin nada guardado.
 - Al resumir, di siempre qué plantilla elegiste ("lo registro como Mitin") para que te puedan corregir.
+- El título describe el acto, no la plantilla: "Desayuno con Elían David Cervera" o "Reunión barrio Santa Margarita María", nunca solo "Reunión". Ese título es lo único que se ve en el calendario del panel.
 - Lo que no te digan, NO te lo inventes: déjalo vacío y anótalo en campos_por_confirmar. Un dato inventado que se guarda es peor que un hueco vacío, porque el hueco se ve y el dato inventado no.
 - Todo lo que creas nace como BORRADOR. Díselo: queda anotado, y para confirmarlo hay que entrar al panel. Tú no puedes confirmar nada.
+- NUNCA digas que algo quedó guardado, anotado o agendado si no has llamado a crear_agendamiento en este mismo turno y te ha respondido que sí. Decir que guardaste algo que no guardaste es el peor error posible: la persona cuenta con una reunión que no existe en ninguna parte.
 - Después de guardar, dile en una línea qué quedó pendiente y qué impide confirmarlo, usando lo que te devuelva la herramienta. Es lo que le permite cerrar los huecos antes de que llegue el día.
 - Si te piden confirmar, cancelar o cambiar algo ya agendado, explica que eso se hace desde el panel.
 - Si la petición no tiene nada que ver con la agenda, dilo con naturalidad y no lo intentes con las herramientas.
@@ -314,10 +316,72 @@ export async function responderAgenda(
 ${origen}
 Mensaje de ${quien.nombre || "la persona"}: ${limpio}`;
 
-  return ejecutarAgente({
+  /**
+   * Se vigila si de verdad se creó algo en este turno.
+   *
+   * Un modelo puede anunciar que guardó la reunión sin haber llamado a la
+   * herramienta, y esa frase se queda en el historial: en los turnos
+   * siguientes imita su propia conducta anterior y sigue narrando guardados
+   * que nunca ocurren. Pasó, y el efecto es el peor posible — la persona
+   * cuenta con una reunión que no existe en ninguna parte.
+   */
+  let creoAlgo = false;
+
+  const respuesta = await ejecutarAgente({
     pregunta,
     historial,
     herramientas: HERRAMIENTAS,
-    ejecutar: (nombre, argumentos) => ejecutarHerramienta(nombre, argumentos, quien),
+    ejecutar: async (nombre, argumentos) => {
+      const salida = await ejecutarHerramienta(nombre, argumentos, quien);
+      if (nombre === "crear_agendamiento" && salida.includes('"creado":true')) {
+        creoAlgo = true;
+      }
+      return salida;
+    },
   });
+
+  if (!creoAlgo && pareceAnuncioDeGuardado(respuesta)) {
+    logger.warn("[agenda] El agente dijo haber guardado sin llamar a la herramienta", {
+      usuario: quien.usuarioId,
+      respuesta: respuesta.slice(0, 300),
+    });
+
+    /**
+     * Se le corrige delante de la persona, en vez de dejar pasar la frase. Es
+     * preferible un mensaje torpe y cierto a uno redondo y falso.
+     */
+    return (
+      "Perdona: creí haberlo guardado y no fue así, todavía no queda nada anotado. " +
+      "¿Te lo guardo ahora como borrador?"
+    );
+  }
+
+  return respuesta;
 }
+
+/**
+ * ¿Suena esta respuesta a «ya quedó guardado»?
+ *
+ * Deliberadamente estrecha: solo verbos de haber guardado, y en pasado. Una
+ * pregunta como «¿te lo guardo?» no debe dispararla, porque corregir al
+ * agente cuando no se ha equivocado es tan confuso como dejarle mentir.
+ */
+function pareceAnuncioDeGuardado(texto: string): boolean {
+  const anuncios = [
+    // «lo registré», «ya lo guardé», «te lo agendé»
+    // El límite de palabra no sirve tras una vocal acentuada: para
+    // JavaScript, «é» no es letra, asi que no hay frontera que detectar.
+    /\b(registr|guard|anot|agend)é(?![a-záéíóú])/i,
+    // «he registrado», «ya he guardado»
+    /\bhe\s+(registrado|guardado|anotado|agendado)\b/i,
+    // «quedó guardado», «queda anotado», «quedó registrada»
+    /\bqued[óa]\s+(guardad|anotad|agendad|registrad)/i,
+    // «quedó como borrador»
+    /\bqued[óa]\s+como\s+borrador\b/i,
+    // «ya está guardado»
+    /\bya\s+est[áa]\s+(guardad|anotad|agendad|registrad)/i,
+  ];
+
+  return anuncios.some((patron) => patron.test(texto));
+}
+
