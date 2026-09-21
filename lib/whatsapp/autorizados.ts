@@ -161,9 +161,16 @@ export async function marcarAtendido(
       data: { linea_id: lineaId, mensaje_wa: mensajeWa, numero: numero ?? null },
     });
     return true;
-  } catch {
-    // Violación de la clave única: ya estaba atendido.
-    return false;
+  } catch (error) {
+    /**
+     * Solo la violación de la clave única significa «ya estaba atendido».
+     * Cualquier otro fallo —la base caída, una columna que no existe porque el
+     * despliegue quedó a medias— se deja subir: tragárselo todo hacía que un
+     * problema de base pareciera un mensaje duplicado, y el mensaje se perdía
+     * sin dejar rastro.
+     */
+    if ((error as { code?: string })?.code === "P2002") return false;
+    throw error;
   }
 }
 

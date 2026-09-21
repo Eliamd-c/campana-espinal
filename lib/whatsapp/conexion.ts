@@ -56,6 +56,15 @@ export type EstadoLinea =
 
 interface Conexion {
   sock: WASocket | null;
+  /**
+   * Últimos sucesos de la línea, en memoria.
+   *
+   * Existe porque aquí no hay manera de leer los registros: el archivo vive en
+   * el servidor del alojamiento compartido y nadie entra ahí. Sin esto,
+   * depurar consiste en adivinar por qué una línea conectada no contesta.
+   * Se asoma por el latido, que va protegido con el secreto compartido.
+   */
+  sucesos: string[];
   estado: EstadoLinea;
   /** Promesa del intento en curso, para que dos peticiones no abran dos sockets. */
   abriendo: Promise<void> | null;
@@ -82,6 +91,16 @@ const conexiones: Map<number, Conexion> = (global_.conexionesWa ??= new Map());
 const registroBaileys = pino({ level: "silent" });
 
 const sesionDe = (lineaId: number) => `linea-${lineaId}`;
+
+/** Cuántos sucesos se guardan antes de empezar a olvidar los viejos. */
+const MAX_SUCESOS = 40;
+
+/** Anota un suceso de la línea, para poder verlo desde fuera por el latido. */
+function anotarSuceso(lineaId: number, texto: string) {
+  const conexion = conexionDe(lineaId);
+  conexion.sucesos.unshift(`${new Date().toISOString()} ${texto}`);
+  if (conexion.sucesos.length > MAX_SUCESOS) conexion.sucesos.length = MAX_SUCESOS;
+}
 
 /**
  * Conversaciones que la línea nunca atiende, sea quien sea el remitente.
@@ -127,7 +146,13 @@ function textoDelMensaje(mensaje: WAMessage): string {
  */
 async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessage) {
   const jid = mensaje.key.remoteJid;
-  if (!jid || mensaje.key.fromMe || conversacionIgnorada(jid)) return;
+  const alt = (mensaje.key as { remoteJidAlt?: string }).remoteJidAlt;
+  anotarSuceso(lineaId, `entra jid=${jid} alt=${alt ?? "-"} fromMe=${mensaje.key.fromMe}`);
+
+  if (!jid || mensaje.key.fromMe || conversacionIgnorada(jid)) {
+    anotarSuceso(lineaId, "descartado: no es conversacion con persona");
+    return;
+  }
 
   const idMensaje = mensaje.key.id;
   if (!idMensaje) return;
@@ -142,6 +167,7 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
    */
   const segundos = Number(mensaje.messageTimestamp ?? 0);
   if (segundos > 0 && Date.now() / 1000 - segundos > ANTIGUEDAD_MAXIMA_S) {
+    anotarSuceso(lineaId, `descartado: demasiado viejo (${Math.round(Date.now() / 1000 - segundos)}s)`);
     return;
   }
 
@@ -153,10 +179,13 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
    * `remoteJidAlt`. Mirar solo uno dejaba fuera de la lista blanca a gente que
    * sí estaba en ella.
    */
-  const alternativo = (mensaje.key as { remoteJidAlt?: string }).remoteJidAlt;
-
-  const { autorizado, numeros } = await buscarAutorizadoPorJids(lineaId, [jid, alternativo]);
+  const { autorizado, numeros } = await buscarAutorizadoPorJids(lineaId, [jid, alt]);
   const numeroVisible = numeros.join(" / ") || "desconocido";
+
+  anotarSuceso(
+    lineaId,
+    `numeros=[${numeros.join(",")}] autorizado=${autorizado ? "si" : "no"}`
+  );
 
   if (!(await marcarAtendido(lineaId, idMensaje, numeroVisible))) {
     logger.info("[whatsapp] Mensaje repetido, ya estaba atendido", {
@@ -220,6 +249,7 @@ async function atenderMensaje(lineaId: number, sock: WASocket, mensaje: WAMessag
    * responder.
    */
   const agente = AGENTES[linea!.agente as keyof typeof AGENTES];
+  anotarSuceso(lineaId, `respondiendo a ${numeroVisible}`);
   await sock.sendMessage(jid, {
     text:
       `Recibido, ${autorizado.nombre || "hola"}. Esta es la línea de ` +
@@ -250,6 +280,7 @@ function conexionDe(lineaId: number): Conexion {
       reintento: null,
       detalle: null,
       requiereQr: false,
+      sucesos: [],
     };
     conexiones.set(lineaId, conexion);
   }
@@ -391,6 +422,8 @@ export async function abrirLinea(lineaId: number): Promise<void> {
        * antigüedad del mensaje, que se comprueba más abajo, más el registro de
        * los ya atendidos.
        */
+      anotarSuceso(lineaId, `upsert tipo=${type} n=${messages.length}`);
+
       for (const mensaje of messages) {
         /**
          * Uno a uno y capturando cada fallo por separado: un mensaje con una
@@ -399,6 +432,7 @@ export async function abrirLinea(lineaId: number): Promise<void> {
         try {
           await atenderMensaje(lineaId, sock, mensaje);
         } catch (error) {
+          anotarSuceso(lineaId, `ERROR atendiendo: ${String(error).slice(0, 200)}`);
           logger.error("[whatsapp] Error atendiendo un mensaje", {
             lineaId,
             error: String(error),
@@ -539,6 +573,7 @@ export function estadoEnMemoria(lineaId: number) {
     fallos: conexion?.fallos ?? 0,
     detalle: conexion?.detalle ?? null,
     requiereQr: conexion?.requiereQr ?? false,
+    sucesos: conexion?.sucesos ?? [],
   };
 }
 
@@ -552,16 +587,16 @@ export function estadoEnMemoria(lineaId: number) {
  * QR que nadie mira.
  */
 export async function reabrirLineasVinculadas(): Promise<
-  { lineaId: number; estado: EstadoLinea }[]
+  { lineaId: number; estado: EstadoLinea; sucesos: string[] }[]
 > {
   const lineas = await prisma.lineaWhatsapp.findMany({ select: { id: true } });
-  const resultado: { lineaId: number; estado: EstadoLinea }[] = [];
+  const resultado: { lineaId: number; estado: EstadoLinea; sucesos: string[] }[] = [];
 
   for (const { id } of lineas) {
     const conexion = conexionDe(id);
 
     if (conexion.requiereQr) {
-      resultado.push({ lineaId: id, estado: conexion.estado });
+      resultado.push({ lineaId: id, estado: conexion.estado, sucesos: conexion.sucesos });
       continue;
     }
 
@@ -571,7 +606,8 @@ export async function reabrirLineasVinculadas(): Promise<
       await abrirLinea(id);
     }
 
-    resultado.push({ lineaId: id, estado: conexionDe(id).estado });
+    const actual = conexionDe(id);
+    resultado.push({ lineaId: id, estado: actual.estado, sucesos: actual.sucesos });
   }
 
   return resultado;
