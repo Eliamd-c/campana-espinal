@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { usePuede } from '../components/PermisosProvider';
 import { GrabadoraVoz } from './components/GrabadoraVoz';
+import { Logistica } from './components/Logistica';
 import { PERMISOS } from '@/lib/permisos';
 import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X } from 'lucide-react';
 
@@ -34,7 +35,7 @@ const ASPECTO_ESTADO: Record<string, string> = {
 export default function AgendaPage() {
   const [plantillas, setPlantillas] = useState<any[]>([]);
   const [agendamientos, setAgendamientos] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'calendario' | 'agendar' | 'plantillas' | 'config'>('calendario');
+  const [activeTab, setActiveTab] = useState<'calendario' | 'agendar' | 'logistica' | 'plantillas' | 'config'>('calendario');
 
   /**
    * Dos de las cuatro pestañas no son para cualquiera.
@@ -793,6 +794,12 @@ export default function AgendaPage() {
           >
             Agendar con IA
           </button>
+          <button
+            onClick={() => setActiveTab('logistica')}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'logistica' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            Logística
+          </button>
           {puedePlantillas && (
           <button 
             onClick={() => setActiveTab('plantillas')}
@@ -815,6 +822,7 @@ export default function AgendaPage() {
       <div className="mt-8 transition-all duration-300">
         {activeTab === 'calendario' && renderCalendario()}
         {activeTab === 'agendar' && renderAgendar()}
+        {activeTab === 'logistica' && <Logistica />}
         {activeTab === 'plantillas' && puedePlantillas && renderPlantillas()}
         {activeTab === 'config' && puedeConfigurar && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-3xl mx-auto">
