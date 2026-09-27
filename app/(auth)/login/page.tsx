@@ -23,7 +23,13 @@ export default function LoginPage() {
     if (result?.error) {
       setError("Credenciales inválidas");
     } else {
-      router.push("/dashboard");
+      /**
+       * A la raíz, no al tablero: es ella quien decide la pantalla de inicio
+       * según lo que la cuenta pueda ver. Mandar a todo el mundo a
+       * `/dashboard` dejaba a las cuentas restringidas en una pantalla que no
+       * pueden leer.
+       */
+      router.push("/");
     }
   };
 

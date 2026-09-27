@@ -4,27 +4,30 @@ import { useState, memo } from "react";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { NavLink } from "./NavLink";
+import { modulosVisibles } from "@/lib/permisos";
 
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: "📊" },
-  { name: "Escanear", href: "/escanear", icon: "📷" },
-  { name: "Contactos", href: "/contactos", icon: "👥" },
-  { name: "Agenda", href: "/agenda", icon: "📅" },
-  { name: "Líderes", href: "/lideres", icon: "⭐" },
-  { name: "Mensajes", href: "/mensajes", icon: "💬" },
-  { name: "Líneas WhatsApp", href: "/lineas", icon: "📱" },
-  { name: "Mesas", href: "/mesas", icon: "🗳️" },
-  { name: "Enlaces", href: "/enlaces", icon: "🔗" },
-  { name: "Inteligencia IA", href: "/ia", icon: "✨" },
-  { name: "Documentación", href: "/docs", icon: "📖" },
-  { name: "Mi cuenta", href: "/cuenta", icon: "🔐" },
-];
-
+/**
+ * El menú solo muestra lo que la cuenta puede abrir.
+ *
+ * Antes estaban los once módulos fijos para todo el mundo. A quien solo lleva
+ * la agenda eso le enseñaba diez puertas que se cierran al tocarlas: los
+ * datos estaban protegidos —eso lo hacen las rutas de API—, pero la
+ * experiencia era la de alguien a quien no se le tiene confianza.
+ */
 interface DashboardSidebarProps {
   session: any;
+  permisos: string[];
 }
 
-export const DashboardSidebar = memo(function Sidebar({ session }: DashboardSidebarProps) {
+export const DashboardSidebar = memo(function Sidebar({
+  session,
+  permisos,
+}: DashboardSidebarProps) {
+  const navigation = modulosVisibles(permisos).map((m) => ({
+    name: m.nombre,
+    href: m.ruta,
+    icon: m.icono,
+  }));
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -136,6 +139,7 @@ export const DashboardSidebar = memo(function Sidebar({ session }: DashboardSide
   // Only re-render if user session role or name changes
   return (
     prevProps.session?.user?.name === nextProps.session?.user?.name &&
-    prevProps.session?.user?.role === nextProps.session?.user?.role
+    prevProps.session?.user?.role === nextProps.session?.user?.role &&
+    prevProps.permisos.join() === nextProps.permisos.join()
   );
 });

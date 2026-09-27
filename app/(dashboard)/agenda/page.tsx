@@ -1,12 +1,53 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePuede } from '../components/PermisosProvider';
+import { PERMISOS } from '@/lib/permisos';
 import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X } from 'lucide-react';
+
+/**
+ * Cómo se ve cada estado y cómo se llama.
+ *
+ * En un solo sitio porque el calendario, la leyenda y —cuando llegue— el
+ * tablero tienen que pintar lo mismo. Antes el calendario solo distinguía
+ * «confirmado» de «todo lo demás», y un cupo apartado se veía igual que un
+ * borrador a medio escribir: dos cosas que para quien organiza no se parecen
+ * en nada.
+ */
+const ETIQUETA_ESTADO: Record<string, string> = {
+  borrador: 'Borrador',
+  cupo: 'Cupo apartado',
+  confirmado: 'Confirmado',
+  ejecutado: 'Ejecutado',
+  cancelado: 'Cancelado',
+};
+
+const ASPECTO_ESTADO: Record<string, string> = {
+  borrador: 'bg-white border border-dashed border-slate-400 text-slate-600',
+  cupo: 'bg-amber-50 border border-amber-300 text-amber-800',
+  confirmado: 'bg-indigo-100 text-indigo-800 border border-indigo-200',
+  ejecutado: 'bg-emerald-50 border border-emerald-300 text-emerald-800',
+  cancelado: 'bg-slate-100 border border-slate-300 text-slate-400 line-through',
+};
 
 export default function AgendaPage() {
   const [plantillas, setPlantillas] = useState<any[]>([]);
   const [agendamientos, setAgendamientos] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'calendario' | 'agendar' | 'plantillas' | 'config'>('calendario');
+
+  /**
+   * Dos de las cuatro pestañas no son para cualquiera.
+   *
+   * Quien define las plantillas decide qué se puede confirmar, y quien entra
+   * en la configuración ve las claves de los servicios que se facturan por
+   * uso. Quien lleva la agenda del candidato no necesita ninguna de las dos,
+   * y hasta ahora las veía y le fallaban al tocarlas.
+   */
+  /** Mes que se está mirando. Antes el título estaba escrito a mano. */
+  const [mesVisible, setMesVisible] = useState(() => new Date());
+
+  const puedePlantillas = usePuede(PERMISOS.AGENDA_PLANTILLAS);
+  const puedeConfigurar = usePuede(PERMISOS.CONFIGURACION_GESTIONAR);
 
   // Form states
   const [textoIA, setTextoIA] = useState('');
@@ -67,11 +108,19 @@ export default function AgendaPage() {
      * si están puestas y de dónde salen. Una clave que no sale del servidor
      * no se puede copiar desde el navegador.
      */
-    fetch('/api/configuracion').then(r => r.json()).then(json => {
-      const estado = contenido(json);
-      if (Array.isArray(estado)) setConfigEstado(estado);
-    });
-  }, []);
+    /**
+     * Solo se pide si la cuenta puede verla: a quien lleva la agenda esta
+     * petición le devolvía un 403 en cada carga de la pantalla, ensuciando el
+     * registro del servidor con accesos denegados que no eran intentos de
+     * nada.
+     */
+    if (puedeConfigurar) {
+      fetch('/api/configuracion').then(r => r.json()).then(json => {
+        const estado = contenido(json);
+        if (Array.isArray(estado)) setConfigEstado(estado);
+      });
+    }
+  }, [puedeConfigurar]);
 
   /**
    * Guarda la configuracion.
@@ -256,52 +305,159 @@ export default function AgendaPage() {
     });
   };
 
+  /**
+   * Calendario del mes.
+   *
+   * Lo que había antes era una maqueta que pasaba por funcional: pintaba 35
+   * casillas numeradas del 1 al 35, con el mes escrito a mano, los botones de
+   * avanzar sin nada detrás y «hoy» fijo en el día 20. Los eventos se
+   * colocaban con `getDate() === (d % 30)`, que ignora el mes y el año: una
+   * reunión de octubre aparecía en la casilla de septiembre, y el día 30 no
+   * podía mostrar ninguna. Para quien lleva la agenda del candidato, un
+   * calendario que miente es peor que no tener calendario.
+   *
+   * Ahora la rejilla se calcula del mes de verdad: cuántos días tiene, en qué
+   * día de la semana empieza, y se rellenan los huecos con los días vecinos
+   * en gris.
+   */
   const renderCalendario = () => {
-    const dias = Array.from({length: 35}, (_, i) => i + 1);
+    const anio = mesVisible.getFullYear();
+    const mes = mesVisible.getMonth();
+
+    const primero = new Date(anio, mes, 1);
+    const diasDelMes = new Date(anio, mes + 1, 0).getDate();
+
+    /**
+     * `getDay()` cuenta desde el domingo; aquí la semana empieza en lunes,
+     * como se lee en Colombia. De ahí el desplazamiento.
+     */
+    const huecosAntes = (primero.getDay() + 6) % 7;
+
+    const casillas: { fecha: Date; delMes: boolean }[] = [];
+    for (let i = huecosAntes; i > 0; i--) {
+      casillas.push({ fecha: new Date(anio, mes, 1 - i), delMes: false });
+    }
+    for (let d = 1; d <= diasDelMes; d++) {
+      casillas.push({ fecha: new Date(anio, mes, d), delMes: true });
+    }
+    // Se completa hasta cerrar la última semana, ni una casilla más.
+    while (casillas.length % 7 !== 0) {
+      const ultima = casillas[casillas.length - 1].fecha;
+      casillas.push({
+        fecha: new Date(ultima.getFullYear(), ultima.getMonth(), ultima.getDate() + 1),
+        delMes: false,
+      });
+    }
+
+    const mismoDia = (a: Date, b: Date) =>
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate();
+
+    const hoy = new Date();
+
+    const titulo = new Intl.DateTimeFormat('es-CO', {
+      month: 'long',
+      year: 'numeric',
+    }).format(mesVisible);
+
+    const moverMes = (paso: number) =>
+      setMesVisible(new Date(anio, mes + paso, 1));
 
     return (
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold flex items-center gap-2">
+      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex items-center justify-between mb-6 gap-3">
+          <h2 className="text-lg md:text-xl font-bold flex items-center gap-2 capitalize">
             <Calendar className="w-6 h-6 text-indigo-600" />
-            Septiembre 2026
+            {titulo}
           </h2>
           <div className="flex gap-2">
-            <button className="p-2 border rounded hover:bg-slate-50"><ChevronLeft className="w-5 h-5"/></button>
-            <button className="px-4 py-2 border rounded hover:bg-slate-50 font-medium">Hoy</button>
-            <button className="p-2 border rounded hover:bg-slate-50"><ChevronRight className="w-5 h-5"/></button>
+            <button
+              onClick={() => moverMes(-1)}
+              aria-label="Mes anterior"
+              className="p-2 border rounded hover:bg-slate-50"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setMesVisible(new Date())}
+              className="px-4 py-2 border rounded hover:bg-slate-50 font-medium"
+            >
+              Hoy
+            </button>
+            <button
+              onClick={() => moverMes(1)}
+              aria-label="Mes siguiente"
+              className="p-2 border rounded hover:bg-slate-50"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
           </div>
         </div>
 
         <div className="grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 rounded-lg overflow-hidden">
           {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => (
-            <div key={d} className="bg-slate-50 p-2 text-center text-sm font-semibold text-slate-600">
+            <div key={d} className="bg-slate-50 p-2 text-center text-xs md:text-sm font-semibold text-slate-600">
               {d}
             </div>
           ))}
-          {dias.map(d => {
-            const eventosDia = agendamientos.filter(a => new Date(a.fecha_inicio).getDate() === (d % 30));
+
+          {casillas.map(({ fecha, delMes }) => {
+            const eventosDia = agendamientos.filter(a =>
+              mismoDia(new Date(a.fecha_inicio), fecha)
+            );
+            const esHoy = mismoDia(fecha, hoy);
 
             return (
-              <div key={d} className="bg-white min-h-[120px] p-2 hover:bg-slate-50 transition-colors">
-                <span className={`text-sm font-medium ${d === 20 ? 'bg-indigo-600 text-white w-7 h-7 flex items-center justify-center rounded-full' : 'text-slate-700'}`}>
-                  {d > 30 ? d - 30 : d}
+              <div
+                key={fecha.toISOString()}
+                className={`min-h-[96px] md:min-h-[120px] p-2 transition-colors ${
+                  delMes ? 'bg-white hover:bg-slate-50' : 'bg-slate-50/60'
+                }`}
+              >
+                <span
+                  className={`text-sm font-medium ${
+                    esHoy
+                      ? 'bg-indigo-600 text-white w-7 h-7 flex items-center justify-center rounded-full'
+                      : delMes
+                        ? 'text-slate-700'
+                        : 'text-slate-400'
+                  }`}
+                >
+                  {fecha.getDate()}
                 </span>
+
                 <div className="mt-2 space-y-1">
                   {eventosDia.map(ev => (
-                    <div 
-                      key={ev.id} 
-                      className={`text-xs p-1.5 rounded truncate flex items-center gap-1
-                        ${ev.estado === 'confirmado' ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-white border border-dashed border-slate-400 text-slate-600'}`}
+                    <div
+                      key={ev.id}
+                      title={`${ev.titulo} — ${ETIQUETA_ESTADO[ev.estado] ?? ev.estado}`}
+                      className={`text-xs p-1.5 rounded truncate flex items-center gap-1 ${
+                        ASPECTO_ESTADO[ev.estado] ?? ASPECTO_ESTADO.borrador
+                      }`}
                     >
-                      {ev.estado === 'confirmado' ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3 text-amber-500" />}
-                      {ev.titulo}
+                      {ev.estado === 'confirmado' ? (
+                        <CheckCircle2 className="w-3 h-3 shrink-0" />
+                      ) : (
+                        <Clock className="w-3 h-3 shrink-0" />
+                      )}
+                      <span className="truncate">{ev.titulo}</span>
                     </div>
                   ))}
                 </div>
               </div>
             );
           })}
+        </div>
+
+        {/* Qué significa cada color, para no tener que adivinarlo. */}
+        <div className="flex flex-wrap gap-3 mt-4 text-xs text-slate-600">
+          {Object.entries(ETIQUETA_ESTADO).map(([estado, etiqueta]) => (
+            <span key={estado} className="flex items-center gap-1.5">
+              <span className={`w-3 h-3 rounded-sm border ${ASPECTO_ESTADO[estado]}`} />
+              {etiqueta}
+            </span>
+          ))}
         </div>
       </div>
     );
@@ -606,26 +762,30 @@ export default function AgendaPage() {
           >
             Agendar con IA
           </button>
+          {puedePlantillas && (
           <button 
             onClick={() => setActiveTab('plantillas')}
             className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'plantillas' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
           >
             Plantillas
           </button>
+          )}
+          {puedeConfigurar && (
           <button 
             onClick={() => setActiveTab('config')}
             className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'config' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
           >
             Configuración IA
           </button>
+          )}
         </div>
       </div>
 
       <div className="mt-8 transition-all duration-300">
         {activeTab === 'calendario' && renderCalendario()}
         {activeTab === 'agendar' && renderAgendar()}
-        {activeTab === 'plantillas' && renderPlantillas()}
-        {activeTab === 'config' && (
+        {activeTab === 'plantillas' && puedePlantillas && renderPlantillas()}
+        {activeTab === 'config' && puedeConfigurar && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-3xl mx-auto">
             <div className="flex items-center gap-2 mb-2">
               <Settings className="w-6 h-6 text-indigo-600" />
