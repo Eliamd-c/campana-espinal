@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { usePuede } from '../components/PermisosProvider';
 import { GrabadoraVoz } from './components/GrabadoraVoz';
 import { Logistica } from './components/Logistica';
+import { Bandeja } from './components/Bandeja';
 import { PERMISOS } from '@/lib/permisos';
 import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X } from 'lucide-react';
 
@@ -17,25 +18,29 @@ import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, Chevr
  * en nada.
  */
 const ETIQUETA_ESTADO: Record<string, string> = {
-  borrador: 'Borrador',
+  borrador: 'Por decidir',
+  pospuesto: 'Aparcada',
   cupo: 'Cupo apartado',
   confirmado: 'Confirmado',
   ejecutado: 'Ejecutado',
-  cancelado: 'Cancelado',
+  rechazado: 'No va',
+  cancelado: 'Cancelada',
 };
 
 const ASPECTO_ESTADO: Record<string, string> = {
   borrador: 'bg-white border border-dashed border-slate-400 text-slate-600',
+  pospuesto: 'bg-slate-50 border border-dotted border-slate-400 text-slate-500',
   cupo: 'bg-amber-50 border border-amber-300 text-amber-800',
   confirmado: 'bg-indigo-100 text-indigo-800 border border-indigo-200',
   ejecutado: 'bg-emerald-50 border border-emerald-300 text-emerald-800',
+  rechazado: 'bg-slate-100 border border-slate-300 text-slate-400',
   cancelado: 'bg-slate-100 border border-slate-300 text-slate-400 line-through',
 };
 
 export default function AgendaPage() {
   const [plantillas, setPlantillas] = useState<any[]>([]);
   const [agendamientos, setAgendamientos] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'calendario' | 'agendar' | 'logistica' | 'plantillas' | 'config'>('calendario');
+  const [activeTab, setActiveTab] = useState<'calendario' | 'bandeja' | 'agendar' | 'logistica' | 'plantillas' | 'config'>('calendario');
 
   /**
    * Dos de las cuatro pestañas no son para cualquiera.
@@ -289,9 +294,7 @@ export default function AgendaPage() {
       setNoReconocido([]);
       setTextoIA('');
 
-      // Se refresca la lista sin recargar la pagina entera.
-      const lista = await fetch('/api/agenda').then(r => r.json());
-      setAgendamientos(lista?.data ?? lista ?? []);
+      await recargarAgenda();
     } catch (err: any) {
       setAviso({ tipo: 'error', texto: err.message });
     }
@@ -471,6 +474,12 @@ export default function AgendaPage() {
         </div>
       </div>
     );
+  };
+
+  /** Vuelve a leer la agenda sin recargar la página entera. */
+  const recargarAgenda = async () => {
+    const lista = await fetch('/api/agenda').then(r => r.json());
+    setAgendamientos(lista?.data ?? lista ?? []);
   };
 
   /**
@@ -795,6 +804,12 @@ export default function AgendaPage() {
             Agendar con IA
           </button>
           <button
+            onClick={() => setActiveTab('bandeja')}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'bandeja' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            Solicitudes
+          </button>
+          <button
             onClick={() => setActiveTab('logistica')}
             className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'logistica' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
           >
@@ -822,6 +837,7 @@ export default function AgendaPage() {
       <div className="mt-8 transition-all duration-300">
         {activeTab === 'calendario' && renderCalendario()}
         {activeTab === 'agendar' && renderAgendar()}
+        {activeTab === 'bandeja' && <Bandeja alDecidir={recargarAgenda} />}
         {activeTab === 'logistica' && <Logistica />}
         {activeTab === 'plantillas' && puedePlantillas && renderPlantillas()}
         {activeTab === 'config' && puedeConfigurar && (

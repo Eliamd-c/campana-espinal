@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { reabrirLineasVinculadas } from "@/lib/whatsapp/conexion";
 import { podarAtendidos } from "@/lib/whatsapp/autorizados";
 import { podarMemoria } from "@/lib/whatsapp/memoria";
+import { despertarPospuestos } from "@/lib/agenda/decidir";
 
 /**
  * Latido: mantiene viva la aplicación y, con ella, las líneas de WhatsApp.
@@ -68,6 +69,12 @@ export async function GET(req: NextRequest) {
     try {
       podados = await podarAtendidos();
       await podarMemoria();
+      /**
+       * Y de paso vuelven a la bandeja las solicitudes aparcadas cuya fecha
+       * ya llegó. El latido pasa cada pocos minutos: es el único reloj que
+       * hay en un alojamiento que duerme la aplicación sola.
+       */
+      await despertarPospuestos();
     } catch (error) {
       logger.warn("[whatsapp] No se pudo podar el registro de mensajes", {
         error: String(error),

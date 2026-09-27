@@ -553,6 +553,23 @@ model Agendamiento {
   creado_por           String   @db.VarChar(80)
   confirmado_por       String?  @db.VarChar(80)
   fecha_confirmado     DateTime?
+
+  /// Por qué se cayó y quién lo decidió. Había `confirmado_por` y no su
+  /// contrario: el motivo de una reunión caída es justo lo que se pierde.
+  motivo_cancelacion   String?  @db.Text
+  cancelado_por        String?  @db.VarChar(80)
+  fecha_cancelado      DateTime?
+
+  /// Aparcada hasta esta fecha. Vuelve sola a la bandeja ese día.
+  pospuesto_hasta      DateTime?
+
+  /// Otro ya pidió lo mismo. No se borra, se enlaza: que dos líderes pidan la
+  /// misma reunión dice que ese barrio insiste.
+  duplicado_de         String?  @db.Uuid
+  /// De qué reunión sale esta, cuando se movió de fecha.
+  reprogramado_de      String?  @db.Uuid
+  reprogramado_por     String?  @db.VarChar(80)
+
   fecha_creado         DateTime @default(now())
   fecha_actualizado    DateTime @updatedAt
 
@@ -560,6 +577,14 @@ model Agendamiento {
   campos_por_confirmar CampoPorConfirmar[]
   recursos_solicitados RecursoSolicitado[]
 
+  original_duplicado   Agendamiento?  @relation("Duplicados", fields: [duplicado_de], references: [id], onDelete: SetNull)
+  duplicados           Agendamiento[] @relation("Duplicados")
+
+  original_reprogramado Agendamiento?  @relation("Reprogramaciones", fields: [reprogramado_de], references: [id], onDelete: SetNull)
+  reprogramaciones      Agendamiento[] @relation("Reprogramaciones")
+
+  @@index([estado])
+  @@index([pospuesto_hasta])
   @@map("agendamientos")
 }
 
