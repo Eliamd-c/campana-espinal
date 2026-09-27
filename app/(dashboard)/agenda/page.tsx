@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePuede } from '../components/PermisosProvider';
+import { GrabadoraVoz } from './components/GrabadoraVoz';
 import { PERMISOS } from '@/lib/permisos';
 import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X } from 'lucide-react';
 
@@ -168,13 +169,21 @@ export default function AgendaPage() {
     }
   };
 
-  const handleInterpretar = async () => {
+  /**
+   * Acepta el texto por parámetro además de leerlo del estado: cuando llega
+   * de un dictado hay que interpretarlo en el mismo momento, y el estado de
+   * React todavía no se ha actualizado.
+   */
+  const handleInterpretar = async (textoDirecto?: string) => {
+    const texto = (textoDirecto ?? textoIA).trim();
+    if (!texto) return;
+
     setInterpretando(true);
     try {
       const res = await fetch('/api/agenda/interpretar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto: textoIA })
+        body: JSON.stringify({ texto })
       });
       const json = await res.json();
 
@@ -463,16 +472,38 @@ export default function AgendaPage() {
     );
   };
 
+  /**
+   * Llega lo dictado.
+   *
+   * Se añade a lo que ya hubiera escrito en vez de reemplazarlo: quien
+   * captura suele escribir cuatro palabras, grabar el resto, y perder lo
+   * primero sería el tipo de cosa que hace desconfiar de la herramienta. Y se
+   * interpreta solo, porque el paso siguiente es siempre el mismo y de pie no
+   * se pulsan dos botones.
+   */
+  const recibirDictado = (texto: string) => {
+    if (!texto.trim()) return;
+    const completo = textoIA.trim() ? `${textoIA.trim()} ${texto.trim()}` : texto.trim();
+    setTextoIA(completo);
+    handleInterpretar(completo);
+  };
+
   const renderAgendar = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
           <MessageSquare className="w-5 h-5 text-indigo-600" />
-          Escritura Natural
+          Cuéntalo como te lo pidieron
         </h2>
         <p className="text-slate-500 text-sm mb-4">
-          Escribe cómo te solicitaron la reunión. La Inteligencia Artificial extraerá automáticamente la plantilla, fecha, recursos necesarios y campos requeridos.
+          Dicta o escribe cómo te solicitaron la reunión, con tus palabras. Se extraen la
+          plantilla, la fecha, el lugar y los recursos, y los revisas antes de guardar.
         </p>
+
+        <div className="mb-4">
+          <GrabadoraVoz alTranscribir={recibirDictado} />
+        </div>
+
         <textarea 
           value={textoIA}
           onChange={e => setTextoIA(e.target.value)}
@@ -480,7 +511,7 @@ export default function AgendaPage() {
           placeholder="Ej: Vamos a realizar una reunión el 4 de agosto en el barrio Caballero y Góngora, hora 6:30 pm. Solicito tarima, sonido y 200 sillas."
         />
         <button 
-          onClick={handleInterpretar}
+          onClick={() => handleInterpretar()}
           disabled={!textoIA || interpretando}
           className="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-medium flex justify-center items-center gap-2 transition-colors disabled:opacity-50"
         >

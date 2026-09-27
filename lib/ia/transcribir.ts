@@ -2,10 +2,13 @@ import { logger } from "@/lib/logger";
 import { proveedoresDisponibles, registrarRelevo } from "@/lib/ia/proveedor";
 
 /**
- * Notas de voz a texto.
+ * Voz a texto.
  *
- * En campaña la gente manda audios, no párrafos. Sin esto, la línea pide por
- * escrito lo que la persona ya dijo hablando, y acaba usándose menos.
+ * En campaña la gente habla, no escribe párrafos. Lo usan las dos puertas de
+ * entrada: las notas de voz que llegan por WhatsApp y el botón de grabar del
+ * panel, que es como captura quien acompaña al candidato —de pie, en la
+ * calle, con una mano ocupada—. Por eso vive aquí y no bajo `whatsapp`: de
+ * WhatsApp no tiene nada.
  *
  * Va aparte de `lib/ia/generar.ts` porque el audio no viaja igual en los dos
  * proveedores: Gemini lo acepta incrustado como cualquier adjunto, mientras

@@ -23,7 +23,7 @@ import {
   ErrorTranscripcion,
   MAX_SEGUNDOS_AUDIO,
   transcribirAudio,
-} from "./transcribir";
+} from "@/lib/ia/transcribir";
 import { cargarHistorial, guardarTurno, sesionDeChat } from "./memoria";
 import {
   AGENTES,

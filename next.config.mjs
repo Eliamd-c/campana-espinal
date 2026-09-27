@@ -54,9 +54,17 @@ const cabecerasDeSeguridad = [
     value: "strict-origin-when-cross-origin",
   },
   {
-    // La aplicación no usa cámara, micrófono ni ubicación desde el servidor.
+    /**
+     * La cámara la usa el escaneo de planillas y el micrófono el dictado de
+     * la agenda, los dos desde el propio dominio. Ubicación, pagos y USB
+     * siguen cerrados a todo el mundo, incluido este sitio.
+     *
+     * `microphone=()` estaba cerrado a todos los orígenes, así que el botón
+     * de dictar habría fallado con un error del navegador que no dice de
+     * dónde viene: el permiso no se pide siquiera.
+     */
     key: "Permissions-Policy",
-    value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=()",
+    value: "camera=(self), microphone=(self), geolocation=(), payment=(), usb=()",
   },
   {
     // Un año de HTTPS obligatorio. Solo surte efecto sobre HTTPS, así que en
