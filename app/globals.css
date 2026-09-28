@@ -25,3 +25,22 @@ body {
     text-wrap: balance;
   }
 }
+
+
+/**
+ * Quien pide menos movimiento, menos movimiento.
+ *
+ * No es una preferencia estética: hay gente a la que el movimiento le produce
+ * mareo. Aquí sobre todo afecta al punto que late mientras se graba una nota
+ * de voz y a los indicadores de carga, que siguen viéndose, solo que quietos.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

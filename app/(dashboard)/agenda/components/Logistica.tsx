@@ -144,7 +144,7 @@ export function Logistica() {
               <button
                 key={o.valor}
                 onClick={() => setDias(o.valor)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${
+                className={`px-3 min-h-[44px] rounded-lg text-sm font-medium border ${
                   dias === o.valor
                     ? "bg-indigo-600 text-white border-indigo-600"
                     : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
@@ -155,7 +155,7 @@ export function Logistica() {
             ))}
             <button
               onClick={() => setTodos(!todos)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${
+              className={`px-3 min-h-[44px] rounded-lg text-sm font-medium border ${
                 todos
                   ? "bg-slate-800 text-white border-slate-800"
                   : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
@@ -166,7 +166,11 @@ export function Logistica() {
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-red-700 mt-3">
+            {error}
+          </p>
+        )}
       </div>
 
       {!cargando && porReunion.length === 0 && (
@@ -246,7 +250,8 @@ export function Logistica() {
                               })
                             }
                             title="Marcar conseguido"
-                            className="p-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                            aria-label="Marcar conseguido"
+                            className="w-11 h-11 flex items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"
                           >
                             <Check className="w-4 h-4" />
                           </button>
@@ -255,7 +260,7 @@ export function Logistica() {
                           <button
                             onClick={() => cambiar(r.id, { estado: "entregado" })}
                             title="Ya está en el sitio"
-                            className="px-2.5 py-2 rounded-lg bg-emerald-700 text-white text-xs font-medium hover:bg-emerald-800"
+                            className="px-3 min-h-[44px] rounded-lg bg-emerald-700 text-white text-xs font-medium hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-800 focus-visible:ring-offset-2"
                           >
                             En el sitio
                           </button>
@@ -264,7 +269,8 @@ export function Logistica() {
                           <button
                             onClick={() => cambiar(r.id, { estado: "no_disponible" })}
                             title="No se consiguió"
-                            className="p-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
+                            aria-label="No se consiguió"
+                            className="w-11 h-11 flex items-center justify-center rounded-lg border border-red-300 text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
                           >
                             <X className="w-4 h-4" />
                           </button>
@@ -277,7 +283,8 @@ export function Logistica() {
                               })
                             }
                             title="Volver atrás"
-                            className="p-2 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50"
+                            aria-label="Volver atrás"
+                            className="w-11 h-11 flex items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2"
                           >
                             <RotateCcw className="w-4 h-4" />
                           </button>
@@ -298,7 +305,7 @@ export function Logistica() {
                         cambiar(r.id, { responsable: valor || null });
                       }
                     }}
-                    className="flex-1 text-sm border-b border-dashed border-slate-300 focus:border-indigo-500 focus:outline-none py-1 bg-transparent"
+                    className="flex-1 text-sm border-b border-dashed border-slate-400 focus:border-indigo-600 focus-visible:outline-none min-h-[44px] bg-transparent"
                   />
                 </div>
               </li>

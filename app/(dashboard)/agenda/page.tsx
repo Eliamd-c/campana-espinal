@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { usePuede } from '../components/PermisosProvider';
+import { usePuede, usePermisos } from '../components/PermisosProvider';
 import { GrabadoraVoz } from './components/GrabadoraVoz';
 import { Logistica } from './components/Logistica';
 import { Bandeja } from './components/Bandeja';
 import { Hoy } from './components/Hoy';
 import { PERMISOS } from '@/lib/permisos';
-import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X } from 'lucide-react';
+import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Sun, Inbox, Mic, Package, Layers } from 'lucide-react';
 
 /**
  * Cómo se ve cada estado y cómo se llama.
@@ -38,6 +38,25 @@ const ASPECTO_ESTADO: Record<string, string> = {
   cancelado: 'bg-slate-100 border border-slate-300 text-slate-400 line-through',
 };
 
+/**
+ * Las secciones, en una lista y no repartidas por el JSX.
+ *
+ * Eran siete botones escritos a mano en una fila fija: en un teléfono se
+ * salían de la pantalla, y quien trabaja aquí lo hace sobre todo en el
+ * teléfono. En una lista se pueden filtrar por permiso, dibujar con scroll
+ * cuando no caben, y separar las dos de administración de las cinco del día a
+ * día.
+ */
+const PESTANAS = [
+  { id: 'hoy', texto: 'Hoy', Icono: Sun, permiso: null },
+  { id: 'bandeja', texto: 'Solicitudes', Icono: Inbox, permiso: null },
+  { id: 'agendar', texto: 'Agendar', Icono: Mic, permiso: null },
+  { id: 'logistica', texto: 'Logística', Icono: Package, permiso: null },
+  { id: 'calendario', texto: 'Calendario', Icono: Calendar, permiso: null },
+  { id: 'plantillas', texto: 'Plantillas', Icono: Layers, permiso: PERMISOS.AGENDA_PLANTILLAS },
+  { id: 'config', texto: 'Ajustes de IA', Icono: Settings, permiso: PERMISOS.CONFIGURACION_GESTIONAR },
+] as const;
+
 export default function AgendaPage() {
   const [plantillas, setPlantillas] = useState<any[]>([]);
   const [agendamientos, setAgendamientos] = useState<any[]>([]);
@@ -54,6 +73,7 @@ export default function AgendaPage() {
   /** Mes que se está mirando. Antes el título estaba escrito a mano. */
   const [mesVisible, setMesVisible] = useState(() => new Date());
 
+  const permisos = usePermisos();
   const puedePlantillas = usePuede(PERMISOS.AGENDA_PLANTILLAS);
   const puedeConfigurar = usePuede(PERMISOS.CONFIGURACION_GESTIONAR);
 
@@ -791,54 +811,31 @@ export default function AgendaPage() {
           <p className="text-slate-500 mt-1">Organiza y administra reuniones con validación de requisitos.</p>
         </div>
         
-        <div className="flex bg-slate-200 p-1 rounded-lg w-fit">
-          <button
-            onClick={() => setActiveTab('hoy')}
-            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'hoy' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
-          >
-            Hoy
-          </button>
-          <button 
-            onClick={() => setActiveTab('calendario')}
-            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'calendario' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
-          >
-            Calendario
-          </button>
-          <button 
-            onClick={() => setActiveTab('agendar')}
-            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'agendar' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
-          >
-            Agendar con IA
-          </button>
-          <button
-            onClick={() => setActiveTab('bandeja')}
-            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'bandeja' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
-          >
-            Solicitudes
-          </button>
-          <button
-            onClick={() => setActiveTab('logistica')}
-            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'logistica' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
-          >
-            Logística
-          </button>
-          {puedePlantillas && (
-          <button 
-            onClick={() => setActiveTab('plantillas')}
-            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'plantillas' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
-          >
-            Plantillas
-          </button>
-          )}
-          {puedeConfigurar && (
-          <button 
-            onClick={() => setActiveTab('config')}
-            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'config' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
-          >
-            Configuración IA
-          </button>
-          )}
-        </div>
+        {/*
+          * Con scroll horizontal en el móvil en vez de apretujadas: siete
+          * secciones no caben en 375 px, y encogerlas hasta que quepan deja
+          * objetivos de toque por debajo de los 44 px que necesita un pulgar.
+          */}
+        <nav aria-label="Secciones de la agenda" className="-mx-6 px-6 md:mx-0 md:px-0 overflow-x-auto">
+          <div className="flex gap-1 bg-slate-200 p-1 rounded-xl w-max md:w-fit">
+            {PESTANAS.filter((p) => !p.permiso || permisos.includes(p.permiso)).map(({ id, texto, Icono }) => {
+              const activa = activeTab === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id as typeof activeTab)}
+                  aria-current={activa ? 'page' : undefined}
+                  className={`flex items-center gap-2 px-4 min-h-[44px] rounded-lg text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 ${
+                    activa ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                >
+                  <Icono className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  {texto}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
       </div>
 
       <div className="mt-8 transition-all duration-300">

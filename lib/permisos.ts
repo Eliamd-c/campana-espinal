@@ -213,20 +213,26 @@ export function tieneAlguno(permisos: string[] | null | undefined, requeridos: P
  * El orden es el de la barra lateral, y también el de preferencia al elegir
  * la pantalla de inicio: la primera que la persona pueda ver.
  */
-export const MODULOS: { nombre: string; ruta: string; icono: string; permiso: Permiso | null }[] = [
-  { nombre: "Dashboard", ruta: "/dashboard", icono: "📊", permiso: PERMISOS.INFORMES_VER },
-  { nombre: "Escanear", ruta: "/escanear", icono: "📷", permiso: PERMISOS.CONTACTOS_CAPTURAR },
-  { nombre: "Contactos", ruta: "/contactos", icono: "👥", permiso: PERMISOS.CONTACTOS_LISTAR },
-  { nombre: "Agenda", ruta: "/agenda", icono: "📅", permiso: PERMISOS.AGENDA_VER },
-  { nombre: "Líderes", ruta: "/lideres", icono: "⭐", permiso: PERMISOS.LIDERES_VER },
-  { nombre: "Mensajes", ruta: "/mensajes", icono: "💬", permiso: PERMISOS.MENSAJES_VER },
-  { nombre: "Líneas WhatsApp", ruta: "/lineas", icono: "📱", permiso: PERMISOS.WHATSAPP_GESTIONAR },
-  { nombre: "Mesas", ruta: "/mesas", icono: "🗳️", permiso: PERMISOS.MESAS_VER },
-  { nombre: "Enlaces", ruta: "/enlaces", icono: "🔗", permiso: PERMISOS.MENSAJES_VER },
-  { nombre: "Inteligencia IA", ruta: "/ia", icono: "✨", permiso: PERMISOS.IA_CONSULTAR },
+export const MODULOS: {
+  nombre: string;
+  ruta: string;
+  /** Nombre del icono de lucide. Antes eran emojis. */
+  icono: string;
+  permiso: Permiso | null;
+}[] = [
+  { nombre: "Dashboard", ruta: "/dashboard", icono: "chart", permiso: PERMISOS.INFORMES_VER },
+  { nombre: "Escanear", ruta: "/escanear", icono: "camara", permiso: PERMISOS.CONTACTOS_CAPTURAR },
+  { nombre: "Contactos", ruta: "/contactos", icono: "personas", permiso: PERMISOS.CONTACTOS_LISTAR },
+  { nombre: "Agenda", ruta: "/agenda", icono: "calendario", permiso: PERMISOS.AGENDA_VER },
+  { nombre: "Líderes", ruta: "/lideres", icono: "estrella", permiso: PERMISOS.LIDERES_VER },
+  { nombre: "Mensajes", ruta: "/mensajes", icono: "mensaje", permiso: PERMISOS.MENSAJES_VER },
+  { nombre: "Líneas WhatsApp", ruta: "/lineas", icono: "telefono", permiso: PERMISOS.WHATSAPP_GESTIONAR },
+  { nombre: "Mesas", ruta: "/mesas", icono: "urna", permiso: PERMISOS.MESAS_VER },
+  { nombre: "Enlaces", ruta: "/enlaces", icono: "enlace", permiso: PERMISOS.MENSAJES_VER },
+  { nombre: "Inteligencia IA", ruta: "/ia", icono: "chispa", permiso: PERMISOS.IA_CONSULTAR },
   /** Sin permiso: la documentación y la cuenta propia son de todos. */
-  { nombre: "Documentación", ruta: "/docs", icono: "📖", permiso: null },
-  { nombre: "Mi cuenta", ruta: "/cuenta", icono: "🔐", permiso: null },
+  { nombre: "Documentación", ruta: "/docs", icono: "libro", permiso: null },
+  { nombre: "Mi cuenta", ruta: "/cuenta", icono: "candado", permiso: null },
 ];
 
 /** Los módulos que esta cuenta puede abrir. */

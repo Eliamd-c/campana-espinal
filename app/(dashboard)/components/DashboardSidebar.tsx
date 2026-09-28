@@ -5,6 +5,45 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { NavLink } from "./NavLink";
 import { modulosVisibles } from "@/lib/permisos";
+import {
+  BarChart3,
+  Camera,
+  Users,
+  Calendar,
+  Star,
+  MessageSquare,
+  Smartphone,
+  Vote,
+  Link2,
+  Sparkles,
+  BookOpen,
+  KeyRound,
+  Circle,
+  type LucideIcon,
+} from "lucide-react";
+
+/**
+ * Iconos de verdad, no emojis.
+ *
+ * Un emoji lo dibuja el sistema operativo: cambia de forma y de color entre
+ * un Android y un iPhone, no hereda el color del texto y no se puede alinear
+ * con el resto. En una herramienta de trabajo se nota, y se nota como
+ * descuido.
+ */
+const ICONOS: Record<string, LucideIcon> = {
+  chart: BarChart3,
+  camara: Camera,
+  personas: Users,
+  calendario: Calendar,
+  estrella: Star,
+  mensaje: MessageSquare,
+  telefono: Smartphone,
+  urna: Vote,
+  enlace: Link2,
+  chispa: Sparkles,
+  libro: BookOpen,
+  candado: KeyRound,
+};
 
 /**
  * El menú solo muestra lo que la cuenta puede abrir.
@@ -26,7 +65,7 @@ export const DashboardSidebar = memo(function Sidebar({
   const navigation = modulosVisibles(permisos).map((m) => ({
     name: m.nombre,
     href: m.ruta,
-    icon: m.icono,
+    Icono: ICONOS[m.icono] ?? Circle,
   }));
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -63,7 +102,7 @@ export const DashboardSidebar = memo(function Sidebar({
                     : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                 }`}
               >
-                <span className="mr-3 text-lg">{item.icon}</span>
+                <item.Icono className="mr-3 w-5 h-5 shrink-0" aria-hidden="true" />
                 {item.name}
               </NavLink>
             );
@@ -119,7 +158,7 @@ export const DashboardSidebar = memo(function Sidebar({
                       : "text-gray-600 hover:bg-gray-50"
                   }`}
                 >
-                  <span className="mr-3 text-xl">{item.icon}</span>
+                  <item.Icono className="mr-3 w-5 h-5 shrink-0" aria-hidden="true" />
                   {item.name}
                 </NavLink>
               );

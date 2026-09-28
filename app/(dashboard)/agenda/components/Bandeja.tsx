@@ -64,8 +64,9 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
   /** Qué formulario está abierto: posponer o duplicar, y sobre cuál. */
   const [abierto, setAbierto] = useState<{
     id: string;
-    que: "posponer" | "duplicar" | "alternativa";
+    que: "posponer" | "duplicar" | "alternativa" | "rechazar";
   } | null>(null);
+  const [motivo, setMotivo] = useState("");
   const [hasta, setHasta] = useState("");
   const [originalId, setOriginalId] = useState("");
   const [otraFecha, setOtraFecha] = useState("");
@@ -113,15 +114,13 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
     }
   }
 
-  function rechazarCon(id: string) {
-    /**
-     * Se pide el motivo porque un rechazo sin explicación es lo mismo que un
-     * borrado: quien lo pidió pregunta y nadie sabe qué contestarle.
-     */
-    const motivo = window.prompt("¿Por qué no va? Lo verá quien pregunte después.");
-    if (!motivo || motivo.trim().length < 3) return;
-    decidir(id, { accion: "rechazar", motivo: motivo.trim() }, "Solicitud rechazada.");
-  }
+  /**
+   * El motivo se pide en la propia tarjeta y no con el cuadro del navegador.
+   * En un teléfono, `window.prompt` abre una ventana del sistema que tapa lo
+   * que se estaba mirando, no se corrige cómodamente y en algunos navegadores
+   * ni siquiera aparece. Y el motivo importa: un rechazo sin explicación es lo
+   * mismo que un borrado.
+   */
 
   return (
     <div className="space-y-4">
@@ -137,8 +136,16 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
               ? "Nada esperando decisión."
               : `${solicitudes.length} esperando${solicitudes.length === 1 ? "" : " decisión"}.`}
         </p>
-        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-        {aviso && <p className="text-sm text-emerald-700 mt-2">{aviso}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-red-700 mt-2">
+            {error}
+          </p>
+        )}
+        {aviso && (
+          <p role="status" className="text-sm text-emerald-700 mt-2">
+            {aviso}
+          </p>
+        )}
       </div>
 
       {!cargando && solicitudes.length === 0 && (
@@ -208,7 +215,7 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
             )}
 
             {s.texto_original && (
-              <p className="text-xs text-slate-400 mt-2 italic line-clamp-2">
+              <p className="text-xs text-slate-500 mt-2 italic line-clamp-2">
                 «{s.texto_original}»
               </p>
             )}
@@ -229,7 +236,7 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                         : "Aceptada: queda como cupo."
                     )
                   }
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
+                  className="flex items-center gap-1.5 px-4 min-h-[44px] rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"
                 >
                   <Check className="w-4 h-4" /> Aceptar
                 </button>
@@ -238,7 +245,7 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                     setAbierto({ id: s.id, que: "posponer" });
                     setHasta("");
                   }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
+                  className="flex items-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2"
                 >
                   <Clock className="w-4 h-4" /> Más adelante
                 </button>
@@ -247,7 +254,7 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                     setAbierto({ id: s.id, que: "duplicar" });
                     setOriginalId("");
                   }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
+                  className="flex items-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2"
                 >
                   <Copy className="w-4 h-4" /> Ya está pedida
                 </button>
@@ -256,13 +263,16 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                     setAbierto({ id: s.id, que: "alternativa" });
                     setOtraFecha("");
                   }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
+                  className="flex items-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2"
                 >
                   <CalendarPlus className="w-4 h-4" /> Otra fecha posible
                 </button>
                 <button
-                  onClick={() => rechazarCon(s.id)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50"
+                  onClick={() => {
+                    setAbierto({ id: s.id, que: "rechazar" });
+                    setMotivo("");
+                  }}
+                  className="flex items-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-red-300 text-red-700 text-sm font-medium hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
                 >
                   <X className="w-4 h-4" /> No va
                 </button>
@@ -278,7 +288,7 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                   type="date"
                   value={hasta}
                   onChange={(e) => setHasta(e.target.value)}
-                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  className="border border-slate-300 rounded-lg px-3 py-2.5 text-sm min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
                 />
               </label>
               <button
@@ -290,10 +300,48 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                     "Aparcada. Vuelve sola ese día."
                   )
                 }
-                className="px-3 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium disabled:opacity-40"
+                className="px-4 min-h-[44px] rounded-lg bg-slate-800 text-white text-sm font-medium disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
               >
                 Aparcar
               </button>
+            </div>
+          )}
+
+          {abierto?.id === s.id && abierto.que === "rechazar" && (
+            <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+              <label className="block text-sm">
+                <span className="block text-xs text-slate-600 mb-1">
+                  Por qué no va. Lo verá quien pregunte después.
+                </span>
+                <input
+                  autoFocus
+                  value={motivo}
+                  onChange={(e) => setMotivo(e.target.value)}
+                  placeholder="Ese barrio ya se cubrió la semana pasada"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
+                />
+              </label>
+              <div className="flex gap-2 mt-2">
+                <button
+                  disabled={motivo.trim().length < 3}
+                  onClick={() =>
+                    decidir(
+                      s.id,
+                      { accion: "rechazar", motivo: motivo.trim() },
+                      "Solicitud rechazada."
+                    )
+                  }
+                  className="px-4 min-h-[44px] rounded-lg bg-red-600 text-white text-sm font-medium disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2"
+                >
+                  Rechazar
+                </button>
+                <button
+                  onClick={() => setAbierto(null)}
+                  className="px-4 min-h-[44px] rounded-lg border border-slate-300 text-slate-700 text-sm font-medium"
+                >
+                  Dejarlo
+                </button>
+              </div>
             </div>
           )}
 
@@ -310,7 +358,7 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                     type="datetime-local"
                     value={otraFecha}
                     onChange={(e) => setOtraFecha(e.target.value)}
-                    className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                    className="border border-slate-300 rounded-lg px-3 py-2.5 text-sm min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
                   />
                 </label>
                 <button
@@ -322,7 +370,7 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                       "Apartada también esa fecha."
                     )
                   }
-                  className="px-3 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium disabled:opacity-40"
+                  className="px-4 min-h-[44px] rounded-lg bg-slate-800 text-white text-sm font-medium disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
                 >
                   Apartar también
                 </button>
@@ -337,7 +385,7 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                 <select
                   value={originalId}
                   onChange={(e) => setOriginalId(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600"
                 >
                   <option value="">Elige la reunión…</option>
                   {enPie.map((o) => (
@@ -357,7 +405,7 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                     "Marcada como repetida y enlazada."
                   )
                 }
-                className="px-3 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium disabled:opacity-40"
+                className="px-4 min-h-[44px] rounded-lg bg-slate-800 text-white text-sm font-medium disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
               >
                 Enlazar
               </button>
