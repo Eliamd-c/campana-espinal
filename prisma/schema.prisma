@@ -563,6 +563,10 @@ model Agendamiento {
   /// Aparcada hasta esta fecha. Vuelve sola a la bandeja ese día.
   pospuesto_hasta      DateTime?
 
+  /// Fechas alternativas de una misma petición: «el jueves o el viernes».
+  /// Las hermanas comparten grupo y se liberan solas al escoger una.
+  grupo_opciones       String?  @db.Uuid
+
   /// Otro ya pidió lo mismo. No se borra, se enlaza: que dos líderes pidan la
   /// misma reunión dice que ese barrio insiste.
   duplicado_de         String?  @db.Uuid
@@ -585,6 +589,7 @@ model Agendamiento {
 
   @@index([estado])
   @@index([pospuesto_hasta])
+  @@index([grupo_opciones])
   @@map("agendamientos")
 }
 

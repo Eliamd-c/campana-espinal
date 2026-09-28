@@ -44,6 +44,7 @@ export async function GET() {
         responsable: true,
         estado: true,
         pospuesto_hasta: true,
+        grupo_opciones: true,
         asistentes_esperados: true,
         texto_original: true,
         creado_por: true,

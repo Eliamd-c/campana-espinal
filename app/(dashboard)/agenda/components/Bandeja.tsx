@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Clock, X, Copy, Inbox, Loader2, MapPin, User } from "lucide-react";
+import {
+  Check,
+  Clock,
+  X,
+  Copy,
+  Inbox,
+  Loader2,
+  MapPin,
+  User,
+  CalendarPlus,
+  GitBranch,
+} from "lucide-react";
 
 /**
  * La bandeja: lo que alguien pidió y falta decidir.
@@ -23,6 +34,7 @@ interface Solicitud {
   responsable: string | null;
   estado: string;
   pospuesto_hasta: string | null;
+  grupo_opciones: string | null;
   asistentes_esperados: number | null;
   texto_original: string | null;
   fecha_creado: string;
@@ -50,9 +62,13 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
   const [aviso, setAviso] = useState<string | null>(null);
 
   /** Qué formulario está abierto: posponer o duplicar, y sobre cuál. */
-  const [abierto, setAbierto] = useState<{ id: string; que: "posponer" | "duplicar" } | null>(null);
+  const [abierto, setAbierto] = useState<{
+    id: string;
+    que: "posponer" | "duplicar" | "alternativa";
+  } | null>(null);
   const [hasta, setHasta] = useState("");
   const [originalId, setOriginalId] = useState("");
+  const [otraFecha, setOtraFecha] = useState("");
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -163,6 +179,12 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                 </p>
               </div>
 
+              {s.grupo_opciones && (
+                <span className="shrink-0 px-2 py-1 rounded-md text-xs font-medium bg-indigo-50 text-indigo-700 flex items-center gap-1">
+                  <GitBranch className="w-3 h-3" />
+                  Una de varias fechas
+                </span>
+              )}
               {s.estado === "pospuesto" && s.pospuesto_hasta && (
                 <span className="shrink-0 px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-600">
                   Vuelve el {new Date(s.pospuesto_hasta).toLocaleDateString("es-CO")}
@@ -198,7 +220,15 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
             ) : (
               <>
                 <button
-                  onClick={() => decidir(s.id, { accion: "aceptar" }, "Aceptada: queda como cupo.")}
+                  onClick={() =>
+                    decidir(
+                      s.id,
+                      { accion: "aceptar" },
+                      s.grupo_opciones
+                        ? "Aceptada. Las otras fechas quedaron libres."
+                        : "Aceptada: queda como cupo."
+                    )
+                  }
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
                 >
                   <Check className="w-4 h-4" /> Aceptar
@@ -220,6 +250,15 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
                 >
                   <Copy className="w-4 h-4" /> Ya está pedida
+                </button>
+                <button
+                  onClick={() => {
+                    setAbierto({ id: s.id, que: "alternativa" });
+                    setOtraFecha("");
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50"
+                >
+                  <CalendarPlus className="w-4 h-4" /> Otra fecha posible
                 </button>
                 <button
                   onClick={() => rechazarCon(s.id)}
@@ -255,6 +294,39 @@ export function Bandeja({ alDecidir }: { alDecidir?: () => void }) {
               >
                 Aparcar
               </button>
+            </div>
+          )}
+
+          {abierto?.id === s.id && abierto.que === "alternativa" && (
+            <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+              <p className="text-xs text-slate-500 mb-2">
+                «El jueves o el viernes». Se aparta también ese día, y al escoger uno el otro
+                se libera solo.
+              </p>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="text-sm">
+                  <span className="block text-xs text-slate-500 mb-1">Otro día posible</span>
+                  <input
+                    type="datetime-local"
+                    value={otraFecha}
+                    onChange={(e) => setOtraFecha(e.target.value)}
+                    className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </label>
+                <button
+                  disabled={!otraFecha}
+                  onClick={() =>
+                    decidir(
+                      s.id,
+                      { accion: "alternativa", fecha_inicio: new Date(otraFecha).toISOString() },
+                      "Apartada también esa fecha."
+                    )
+                  }
+                  className="px-3 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium disabled:opacity-40"
+                >
+                  Apartar también
+                </button>
+              </div>
             </div>
           )}
 

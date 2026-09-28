@@ -9,6 +9,7 @@ import { exigirPermiso } from "@/lib/auth/permisos-ruta";
 import { PERMISOS } from "@/lib/permisos";
 import {
   aceptar,
+  anadirAlternativa,
   cancelar,
   marcarDuplicada,
   posponer,
@@ -46,6 +47,10 @@ const DecisionSchema = z.discriminatedUnion("accion", [
     fecha_inicio: z.coerce.date(),
     motivo: z.string().max(500).optional(),
   }),
+  z.object({
+    accion: z.literal("alternativa"),
+    fecha_inicio: z.coerce.date(),
+  }),
 ]);
 
 export async function POST(
@@ -81,6 +86,8 @@ export async function POST(
           return cancelar(params.id, quien, decision.motivo);
         case "reprogramar":
           return reprogramar(params.id, quien, decision.fecha_inicio, decision.motivo);
+        case "alternativa":
+          return anadirAlternativa(params.id, quien, decision.fecha_inicio);
       }
     })();
 

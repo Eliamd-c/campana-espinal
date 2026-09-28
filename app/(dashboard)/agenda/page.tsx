@@ -5,6 +5,7 @@ import { usePuede } from '../components/PermisosProvider';
 import { GrabadoraVoz } from './components/GrabadoraVoz';
 import { Logistica } from './components/Logistica';
 import { Bandeja } from './components/Bandeja';
+import { Hoy } from './components/Hoy';
 import { PERMISOS } from '@/lib/permisos';
 import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X } from 'lucide-react';
 
@@ -40,7 +41,7 @@ const ASPECTO_ESTADO: Record<string, string> = {
 export default function AgendaPage() {
   const [plantillas, setPlantillas] = useState<any[]>([]);
   const [agendamientos, setAgendamientos] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'calendario' | 'bandeja' | 'agendar' | 'logistica' | 'plantillas' | 'config'>('calendario');
+  const [activeTab, setActiveTab] = useState<'hoy' | 'calendario' | 'bandeja' | 'agendar' | 'logistica' | 'plantillas' | 'config'>('hoy');
 
   /**
    * Dos de las cuatro pestañas no son para cualquiera.
@@ -791,6 +792,12 @@ export default function AgendaPage() {
         </div>
         
         <div className="flex bg-slate-200 p-1 rounded-lg w-fit">
+          <button
+            onClick={() => setActiveTab('hoy')}
+            className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'hoy' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            Hoy
+          </button>
           <button 
             onClick={() => setActiveTab('calendario')}
             className={`px-6 py-2 rounded-md font-medium transition-all ${activeTab === 'calendario' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-slate-900'}`}
@@ -835,6 +842,7 @@ export default function AgendaPage() {
       </div>
 
       <div className="mt-8 transition-all duration-300">
+        {activeTab === 'hoy' && <Hoy />}
         {activeTab === 'calendario' && renderCalendario()}
         {activeTab === 'agendar' && renderAgendar()}
         {activeTab === 'bandeja' && <Bandeja alDecidir={recargarAgenda} />}

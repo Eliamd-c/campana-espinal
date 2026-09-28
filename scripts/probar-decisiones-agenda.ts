@@ -11,6 +11,7 @@ import "dotenv/config";
 import prisma from "../lib/db";
 import {
   aceptar,
+  anadirAlternativa,
   cancelar,
   marcarDuplicada,
   posponer,
@@ -129,7 +130,42 @@ async function main() {
   const otraVez = await reprogramar(e, "prueba", nuevaFecha);
   comprobar("no deja reprogramar algo ya cancelado", !otraVez.ok);
 
-  // 6. Cancelar una que existía
+  // 6. Fechas alternativas: al escoger una, las otras se liberan
+  const g1 = await crear("P jueves o viernes", 20);
+  const alt = await anadirAlternativa(g1, "prueba", new Date(Date.now() + 21 * 86400000));
+  const g2 = alt.ok ? alt.datos.id : "";
+  if (g2) creados.push(g2);
+
+  const conGrupo = await prisma.agendamiento.findMany({
+    where: { id: { in: [g1, g2] } },
+    select: { grupo_opciones: true, recursos_solicitados: { select: { item: true } } },
+  });
+  comprobar(
+    "la alternativa comparte grupo con la original",
+    conGrupo.length === 2 &&
+      !!conGrupo[0].grupo_opciones &&
+      conGrupo[0].grupo_opciones === conGrupo[1].grupo_opciones
+  );
+  comprobar("la alternativa se lleva los recursos", conGrupo[1]?.recursos_solicitados.length === 1);
+
+  const elegida = await aceptar(g1, "prueba");
+  comprobar(
+    "al escoger una, la otra se libera",
+    elegida.ok && elegida.datos.liberadas === 1,
+    elegida.ok ? `liberadas: ${elegida.datos.liberadas}` : ""
+  );
+
+  const hermana = await prisma.agendamiento.findUnique({
+    where: { id: g2 },
+    select: { estado: true, motivo_cancelacion: true },
+  });
+  comprobar(
+    "la liberada dice por qué",
+    hermana?.estado === "cancelado" && !!hermana.motivo_cancelacion?.includes("otra fecha"),
+    hermana?.motivo_cancelacion ?? ""
+  );
+
+  // 7. Cancelar una que existía
   const f = await crear("P cancelar", 12, "cupo");
   await cancelar(f, "prueba", "Se cruzó con el mitin");
   comprobar("cancelar guarda el motivo", (await estadoDe(f)) === "cancelado");
@@ -142,6 +178,7 @@ main()
   .finally(async () => {
     for (const id of creados) {
       await prisma.agendamiento.deleteMany({ where: { reprogramado_de: id } });
+      await prisma.agendamiento.deleteMany({ where: { duplicado_de: id } });
       await prisma.agendamiento.deleteMany({ where: { duplicado_de: id } });
       await prisma.agendamiento.deleteMany({ where: { id } });
     }

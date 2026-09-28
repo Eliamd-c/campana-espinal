@@ -24,6 +24,7 @@ async function cargar(id: string) {
       id: true,
       titulo: true,
       estado: true,
+      grupo_opciones: true,
       fecha_inicio: true,
       fecha_fin: true,
       plantilla_id: true,
@@ -53,21 +54,136 @@ function comprobarPaso(actual: string, destino: Estado): string | null {
   return null;
 }
 
-/** Aceptar: la solicitud pasa a ser un cupo apartado en la agenda. */
-export async function aceptar(id: string, quien: string): Promise<Resultado<{ estado: string }>> {
+/**
+ * Aceptar: la solicitud pasa a ser un cupo apartado en la agenda.
+ *
+ * Si venía con fechas alternativas —«el jueves o el viernes»—, escoger una
+ * libera las otras. Se cancelan con su motivo en vez de borrarse: saber que
+ * se barajaron dos días explica después por qué el jueves estaba apartado.
+ */
+export async function aceptar(
+  id: string,
+  quien: string
+): Promise<Resultado<{ estado: string; liberadas: number }>> {
   const fila = await cargar(id);
   if (!fila) return { ok: false, error: "No existe", status: 404 };
 
   const problema = comprobarPaso(fila.estado, "cupo");
   if (problema) return { ok: false, error: problema, status: 409 };
 
-  await prisma.agendamiento.update({
-    where: { id },
-    data: { estado: "cupo", pospuesto_hasta: null },
+  const liberadas = await prisma.$transaction(async (tx) => {
+    await tx.agendamiento.update({
+      where: { id },
+      data: { estado: "cupo", pospuesto_hasta: null },
+    });
+
+    if (!fila.grupo_opciones) return 0;
+
+    const cuando = fila.fecha_inicio.toLocaleDateString("es-CO", {
+      timeZone: "America/Bogota",
+      dateStyle: "medium",
+    });
+
+    const { count } = await tx.agendamiento.updateMany({
+      where: {
+        grupo_opciones: fila.grupo_opciones,
+        id: { not: id },
+        estado: { in: ["borrador", "pospuesto", "cupo"] },
+      },
+      data: {
+        estado: "cancelado",
+        motivo_cancelacion: `Se escogió otra fecha: ${cuando}`,
+        cancelado_por: quien,
+        fecha_cancelado: new Date(),
+        pospuesto_hasta: null,
+      },
+    });
+
+    return count;
   });
 
-  logger.info("[agenda] Solicitud aceptada", { id, quien });
-  return { ok: true, datos: { estado: "cupo" } };
+  logger.info("[agenda] Solicitud aceptada", { id, quien, liberadas });
+  return { ok: true, datos: { estado: "cupo", liberadas } };
+}
+
+/**
+ * Añade otra fecha posible a la misma petición.
+ *
+ * La alternativa es una copia con otro día: mismo título, mismo lugar, mismos
+ * recursos. Se crea en el mismo grupo, y al escoger cualquiera de ellas las
+ * demás se liberan solas.
+ */
+export async function anadirAlternativa(
+  id: string,
+  quien: string,
+  fecha: Date
+): Promise<Resultado<{ id: string; grupo: string }>> {
+  const fila = await cargar(id);
+  if (!fila) return { ok: false, error: "No existe", status: 404 };
+
+  if (!["borrador", "pospuesto", "cupo"].includes(fila.estado)) {
+    return {
+      ok: false,
+      error: "Solo se le pueden añadir fechas a algo que siga en pie.",
+      status: 409,
+    };
+  }
+
+  if (fecha.getTime() < Date.now()) {
+    return { ok: false, error: "Esa fecha ya pasó.", status: 400 };
+  }
+
+  const grupo = fila.grupo_opciones ?? crypto.randomUUID();
+
+  const creada = await prisma.$transaction(async (tx) => {
+    // La primera vez hay que marcar también a la original con el grupo.
+    if (!fila.grupo_opciones) {
+      await tx.agendamiento.update({ where: { id }, data: { grupo_opciones: grupo } });
+    }
+
+    return tx.agendamiento.create({
+      data: {
+        plantilla_id: fila.plantilla_id,
+        reglas_congeladas: fila.reglas_congeladas as any,
+        titulo: fila.titulo,
+        fecha_inicio: fecha,
+        barrio: fila.barrio,
+        direccion: fila.direccion,
+        datos: fila.datos as any,
+        estado: fila.estado,
+        lider_id: fila.lider_id,
+        responsable: fila.responsable,
+        asistentes_esperados: fila.asistentes_esperados,
+        presupuesto_estimado: fila.presupuesto_estimado,
+        notas: fila.notas,
+        texto_original: fila.texto_original,
+        creado_por: quien,
+        grupo_opciones: grupo,
+        campos_por_confirmar: fila.campos_por_confirmar.length
+          ? {
+              create: fila.campos_por_confirmar.map((c) => ({
+                campo: c.campo,
+                marcado_por: quien,
+              })),
+            }
+          : undefined,
+        recursos_solicitados: fila.recursos_solicitados.length
+          ? {
+              create: fila.recursos_solicitados.map((r) => ({
+                item: r.item,
+                cantidad_solicitada: r.cantidad_solicitada,
+                estado: "solicitado",
+                orden: r.orden,
+              })),
+            }
+          : undefined,
+      },
+      select: { id: true },
+    });
+  });
+
+  logger.info("[agenda] Fecha alternativa añadida", { de: id, nueva: creada.id, quien });
+  return { ok: true, datos: { id: creada.id, grupo } };
 }
 
 /** Rechazar: nunca llegó a ser reunión, y se anota por qué. */
