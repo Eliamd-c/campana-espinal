@@ -1,21 +1,18 @@
 import { redirect } from "next/navigation";
-import { sesionConPermisos } from "@/lib/auth/permisos-sesion";
-import { rutaDeInicio } from "@/lib/permisos";
 
 /**
  * La puerta de entrada.
  *
- * Antes redirigía siempre a `/login`, sin mirar la sesión: tras un acceso
- * correcto, el login mandaba a `/` y esto devolvía otra vez a `/login`. El
- * resultado era que con las credenciales correctas la pantalla «solo se
- * recargaba». Ahora, con sesión, cada cuenta entra por la primera puerta que
- * tenga abierta; sin sesión, va al login.
+ * Antes redirigía a `/login` sin mirar la sesión: como el login manda a `/`
+ * tras autenticar, un acceso correcto rebotaba otra vez a `/login` y la
+ * pantalla «solo se recargaba». Ahora manda a `/dashboard`, y es el layout
+ * del panel quien exige la sesión: sin ella, redirige a `/login`; con ella,
+ * entra.
+ *
+ * Se deja como una redirección síncrona, sin tocar base de datos ni sesión
+ * aquí, para que esta ruta no pese nada al compilar. El reparto por permisos
+ * ya lo resuelve el propio panel.
  */
-export const dynamic = "force-dynamic";
-
-export default async function Home() {
-  const cuenta = await sesionConPermisos();
-  if (!cuenta) redirect("/login");
-
-  redirect(rutaDeInicio(cuenta.permisos));
+export default function Home() {
+  redirect("/dashboard");
 }
