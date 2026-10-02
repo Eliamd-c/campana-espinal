@@ -16,6 +16,18 @@ interface Resumen {
   guardados: number;
   fallidos: number;
   invalidos: number;
+  repetidosOtroLider?: number;
+}
+
+interface ConcejalOpcion {
+  id: number;
+  nombre: string | null;
+}
+
+interface LiderOpcion {
+  id: number;
+  nombre: string | null;
+  concejal_id: number | null;
 }
 
 export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
@@ -25,6 +37,37 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
   const [duplicados, setDuplicados] = useState<Record<number, any>>({});
   const [guardandoTodos, setGuardandoTodos] = useState(false);
   const [resumen, setResumen] = useState<Resumen | null>(null);
+
+  // Datos de la reunión de esta planilla. Al guardar, de aquí sale a qué líder
+  // y a qué concejal se le acredita el trabajo.
+  const [concejales, setConcejales] = useState<ConcejalOpcion[]>([]);
+  const [lideres, setLideres] = useState<LiderOpcion[]>([]);
+  const [liderId, setLiderId] = useState("");
+  const [concejalId, setConcejalId] = useState("");
+  const [barrioReunion, setBarrioReunion] = useState("");
+  const [fechaReunion, setFechaReunion] = useState("");
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/concejales").then((r) => (r.ok ? r.json() : { data: [] })),
+      fetch("/api/lideres").then((r) => (r.ok ? r.json() : { data: [] })),
+    ])
+      .then(([dc, dl]) => {
+        setConcejales(dc.data || []);
+        setLideres(dl.data || []);
+      })
+      .catch(() => {
+        /* sin lista, el líder/concejal se dejan sin asignar */
+      });
+  }, []);
+
+  // Al elegir líder, el concejal se autocompleta con el suyo (congelable y
+  // corregible: en la práctica del «paquete» a veces no es uno a uno).
+  const elegirLider = (id: string) => {
+    setLiderId(id);
+    const lider = lideres.find((l) => String(l.id) === id);
+    setConcejalId(lider?.concejal_id != null ? String(lider.concejal_id) : "");
+  };
 
   /**
    * Comprueba en una sola petición cuáles de las cédulas leídas ya están en
@@ -181,6 +224,17 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
     setGuardandoTodos(true);
 
     try {
+      // Si se eligió líder, se manda la reunión para crearla y acreditarle el
+      // trabajo. Sin líder, se guarda como antes (solo contactos).
+      const reunion = liderId
+        ? {
+            lider_id: Number(liderId),
+            concejal_id: concejalId ? Number(concejalId) : null,
+            barrio: barrioReunion || undefined,
+            fecha: fechaReunion || undefined,
+          }
+        : undefined;
+
       const res = await fetch("/api/contactos/bulk-import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -191,6 +245,7 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
             telefono: registros[idx].telefono.valor,
             barrio: registros[idx].barrio.valor,
           })),
+          reunion,
         }),
       });
 
@@ -226,6 +281,9 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
         guardados: reciénGuardados.length,
         fallidos: Object.keys(nuevosErrores).length,
         invalidos: invalidos.length,
+        repetidosOtroLider: Array.isArray(json.data?.repetidos_otro_lider)
+          ? json.data.repetidos_otro_lider.length
+          : 0,
       });
     } catch (err: any) {
       // El lote no llegó: ninguna fila cambia de estado, se puede reintentar.
@@ -267,6 +325,72 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
         <span className="flex items-center gap-1 text-xs text-gray-400">
           Tip: El sistema actualizará el registro si la cédula ya existe.
         </span>
+      </div>
+
+      {/* Datos de la reunión: a quién se le acredita esta planilla. */}
+      <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <p className="text-sm font-semibold text-gray-700">Reunión de esta planilla</p>
+          <p className="text-xs text-gray-400">
+            Opcional. Sin líder, los contactos se guardan sin atribución.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <label className="block">
+            <span className="text-xs font-medium text-gray-600">Líder</span>
+            <select
+              value={liderId}
+              onChange={(e) => elegirLider(e.target.value)}
+              className="mt-1 w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="">— Sin líder —</option>
+              {lideres.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.nombre || `Líder ${l.id}`}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-medium text-gray-600">
+              Concejal <span className="text-gray-400">(si aplica)</span>
+            </span>
+            <select
+              value={concejalId}
+              onChange={(e) => setConcejalId(e.target.value)}
+              disabled={!liderId}
+              className="mt-1 w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              <option value="">— Del alcalde —</option>
+              {concejales.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre || `Concejal ${c.id}`}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-medium text-gray-600">Barrio</span>
+            <input
+              value={barrioReunion}
+              onChange={(e) => setBarrioReunion(e.target.value)}
+              placeholder="Ej. Arkabal"
+              className="mt-1 w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-medium text-gray-600">Fecha</span>
+            <input
+              type="date"
+              value={fechaReunion}
+              onChange={(e) => setFechaReunion(e.target.value)}
+              className="mt-1 w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </label>
+        </div>
       </div>
 
       {/* Guardado en bloque */}
@@ -313,6 +437,15 @@ export function TablaRevision({ registros, onChange }: TablaRevisionProps) {
               Las filas con problema siguen editables abajo: corrígelas y vuelve a guardar.
             </span>
           )}
+          {resumen.repetidosOtroLider ? (
+            <span className="block text-xs mt-1 text-blue-700">
+              {resumen.repetidosOtroLider}{" "}
+              {resumen.repetidosOtroLider === 1
+                ? "persona ya estaba registrada con otro líder"
+                : "personas ya estaban registradas con otro líder"}
+              : se mantiene su atribución original.
+            </span>
+          ) : null}
         </div>
       )}
 

@@ -14,23 +14,34 @@ export async function bulkUpsertContactos(
     telefono?: string;
     barrio?: string;
     intencion_voto?: string;
-  }>
+  }>,
+  /**
+   * Contexto de la planilla que se está digitalizando. Si viene, cada contacto
+   * NUEVO queda ligado a esa reunión y a ese líder. A los que YA existían no se
+   * les toca la atribución: se quedan con la reunión/líder que los registró la
+   * primera vez (la regla de «la persona cuenta para quien la registró
+   * primero»). Las cédulas repetidas que venían de OTRO líder se devuelven
+   * aparte, para poder marcarlas.
+   */
+  contexto?: { reunion_id?: number; lider_id?: number }
 ): Promise<{
   creados: number;
   actualizados: number;
   errores: Array<{ cedula: string; error: string }>;
+  repetidos_otro_lider: string[];
 }> {
   const resultados = {
     creados: 0,
     actualizados: 0,
     errores: [] as Array<{ cedula: string; error: string }>,
+    repetidos_otro_lider: [] as string[],
   };
 
   if (contactos.length === 0) return resultados;
 
   // Filtrar cedulas válidas
   const contactosValidos = contactos.filter(c => c.cedula && c.cedula.trim() !== "");
-  
+
   // Procesar en chunks de 500 contactos para máxima eficiencia
   const chunkSize = 500;
   for (let i = 0; i < contactosValidos.length; i += chunkSize) {
@@ -38,12 +49,13 @@ export async function bulkUpsertContactos(
     const cedulasChunk = chunk.map(c => c.cedula);
 
     try {
-      // 1. Identificar cuáles ya existen en la base de datos
+      // 1. Identificar cuáles ya existen, y de qué líder venían.
       const existentes = await prisma.contacto.findMany({
         where: { cedula: { in: cedulasChunk } },
-        select: { cedula: true }
+        select: { cedula: true, lider_id: true }
       });
       const existentesSet = new Set(existentes.map(e => e.cedula));
+      const liderPrevio = new Map(existentes.map(e => [e.cedula, e.lider_id]));
 
       // 2. Ejecutar transacción del chunk
       await prisma.$transaction(
@@ -56,6 +68,9 @@ export async function bulkUpsertContactos(
               barrio: contacto.barrio || undefined,
               intencion_voto: contacto.intencion_voto || undefined,
               fecha_ultimo_contacto: new Date(),
+              es_nuevo: false,
+              // Nota: NO se tocan lider_id ni reunion_id de un contacto que ya
+              // existía. Su atribución es la de la primera vez que se registró.
             },
             create: {
               cedula: contacto.cedula,
@@ -64,15 +79,27 @@ export async function bulkUpsertContactos(
               barrio: contacto.barrio || "",
               intencion_voto: contacto.intencion_voto || "desconocido",
               es_nuevo: true,
+              lider_id: contexto?.lider_id ?? undefined,
+              reunion_id: contexto?.reunion_id ?? undefined,
             },
           })
         )
       );
 
-      // 3. Contabilizar creados y actualizados en este chunk
+      // 3. Contabilizar creados y actualizados en este chunk.
       chunk.forEach(contacto => {
         if (existentesSet.has(contacto.cedula)) {
           resultados.actualizados++;
+          // Si ya existía y venía de un líder distinto al de esta planilla,
+          // es una persona que aparece con dos líderes: se marca.
+          const previo = liderPrevio.get(contacto.cedula);
+          if (
+            contexto?.lider_id &&
+            previo != null &&
+            previo !== contexto.lider_id
+          ) {
+            resultados.repetidos_otro_lider.push(contacto.cedula);
+          }
         } else {
           resultados.creados++;
         }
