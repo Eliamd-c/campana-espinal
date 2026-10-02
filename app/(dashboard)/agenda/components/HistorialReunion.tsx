@@ -57,7 +57,7 @@ export function HistorialReunion({ reunionId, titulo }: HistorialProps) {
   const obtenerCambiosDetallados = (antes: any, despues: any) => {
     if (!antes || !despues) return [];
 
-    const cambios = [];
+    const cambios: Array<{ campo: string; de: any; hacia: any }> = [];
     const campos = ['estado', 'fecha_inicio', 'titulo', 'barrio', 'direccion', 'responsable'];
 
     campos.forEach((campo) => {
