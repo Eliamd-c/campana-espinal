@@ -61,6 +61,32 @@ export default function MesasPage() {
         </button>
       </div>
 
+      {/* Resumen general: el total de votos (personas registradas) de un
+          vistazo, antes del detalle por puesto. */}
+      {!cargando && puestos.length > 0 && (() => {
+        const totalVotos = puestos.reduce(
+          (acc, p) => acc + p.mesas.reduce((s, m) => s + m.contactos, 0),
+          0
+        );
+        const totalMesas = puestos.reduce((acc, p) => acc + p.mesas.length, 0);
+        return (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <p className="text-xs text-gray-500">Votos registrados</p>
+              <p className="text-2xl font-bold text-emerald-700">{totalVotos.toLocaleString("es-CO")}</p>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <p className="text-xs text-gray-500">Mesas</p>
+              <p className="text-2xl font-bold text-gray-800">{totalMesas.toLocaleString("es-CO")}</p>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <p className="text-xs text-gray-500">Puestos</p>
+              <p className="text-2xl font-bold text-gray-800">{puestos.length.toLocaleString("es-CO")}</p>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {cargando ? (
           <div className="col-span-full py-16 flex justify-center">
@@ -87,8 +113,14 @@ export default function MesasPage() {
                       📍 {puesto.direccion}
                     </p>
                   </div>
-                  <div className={`px-3 py-1 rounded-full border text-xs font-bold ${getColorCobertura(coberturaTotal)}`}>
-                    {getEmojiCobertura(coberturaTotal)}
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-emerald-700 leading-none">
+                      {totalContactos.toLocaleString("es-CO")}
+                    </p>
+                    <p className="text-[11px] text-gray-500 mb-1">votos del puesto</p>
+                    <div className={`inline-block px-3 py-1 rounded-full border text-xs font-bold ${getColorCobertura(coberturaTotal)}`}>
+                      {getEmojiCobertura(coberturaTotal)}
+                    </div>
                   </div>
                 </div>
 
@@ -108,13 +140,18 @@ export default function MesasPage() {
 
                   <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Detalle por mesas</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {puesto.mesas.map((mesa, mIdx) => {
+                    {[...puesto.mesas]
+                      .sort((a, b) => (Number(a.numero) - Number(b.numero)) || a.numero.localeCompare(b.numero))
+                      .map((mesa, mIdx) => {
                       const cob = (mesa.contactos / mesa.meta) * 100;
                       return (
                         <div key={mIdx} className="border border-gray-100 rounded-xl p-3 flex justify-between items-center hover:bg-gray-50 transition">
                           <div>
                             <p className="text-sm font-bold text-gray-800">Mesa {mesa.numero}</p>
-                            <p className="text-xs text-gray-500">{mesa.contactos} / {mesa.meta} pers.</p>
+                            <p className="text-xs text-gray-500">
+                              <span className="text-base font-bold text-emerald-700">{mesa.contactos}</span>{" "}
+                              votos · meta {mesa.meta}
+                            </p>
                           </div>
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs ${getColorCobertura(cob)}`}>
                             {Math.round(cob)}%
