@@ -10,7 +10,8 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import { Landmark, UserPlus, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { Landmark, UserPlus, Loader2, BarChart3 } from "lucide-react";
 
 interface Concejal {
   id: number;
@@ -119,15 +120,23 @@ export default function ConcejalesPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <Landmark className="w-6 h-6 text-emerald-600" /> Concejales
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Candidatos al concejo de la coalición y los líderes que le trabajan a
-          cada uno. El trabajo de cada líder se le acredita a su concejal, y todo
-          suma para el alcalde.
-        </p>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <Landmark className="w-6 h-6 text-emerald-600" /> Concejales
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Candidatos al concejo de la coalición y los líderes que le trabajan a
+            cada uno. El trabajo de cada líder se le acredita a su concejal, y todo
+            suma para el alcalde.
+          </p>
+        </div>
+        <Link
+          href="/concejales/reporte"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-800 border border-emerald-200 bg-emerald-50 rounded-lg px-3 py-2 whitespace-nowrap"
+        >
+          <BarChart3 className="w-4 h-4" /> Ver reporte
+        </Link>
       </div>
 
       {error && (
