@@ -72,6 +72,8 @@ export default function GenerarPlanillaPage() {
   const [lugar, setLugar] = useState("");
   const [fecha, setFecha] = useState("");
   const [barrio, setBarrio] = useState("");
+  const [lider, setLider] = useState("");
+  const [concejal, setConcejal] = useState("");
   const [filas, setFilas] = useState(12);
   const [eventos, setEventos] = useState<EventoResumen[]>([]);
 
@@ -222,6 +224,28 @@ export default function GenerarPlanillaPage() {
             </label>
 
             <label className="block">
+              <span className="text-sm font-medium text-gray-700">Líder de la reunión</span>
+              <input
+                value={lider}
+                onChange={(e) => setLider(e.target.value)}
+                placeholder="Nombre del líder (o dejar en blanco)"
+                className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-medium text-gray-700">
+                Concejal <span className="text-gray-400 font-normal">(si aplica)</span>
+              </span>
+              <input
+                value={concejal}
+                onChange={(e) => setConcejal(e.target.value)}
+                placeholder="Candidato al concejo, o dejar en blanco"
+                className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </label>
+
+            <label className="block">
               <span className="text-sm font-medium text-gray-700">Filas por hoja</span>
               <select
                 value={filas}
@@ -356,10 +380,46 @@ export default function GenerarPlanillaPage() {
             </tbody>
           </table>
 
-          <div className="mt-2 flex justify-between text-[10px] px-8" style={{ color: "var(--texto-guia)" }}>
+          {/* Atribución de la reunión. Es el dato que, al digitalizar, dice a
+              qué líder y a qué concejal se le acredita esta planilla. Va en el
+              pie para diligenciarlo a mano si no se pre-imprimió. El concejal
+              es opcional: en blanco = reunión del alcalde directamente. */}
+          <div
+            className="mt-3 pt-2 grid grid-cols-2 gap-x-6 text-[12px] border-t"
+            style={{ borderColor: "var(--borde-fuerte)" }}
+          >
+            <p>
+              <strong>Líder de la reunión:</strong>{" "}
+              {lider || "______________________________"}
+            </p>
+            <p>
+              <strong>Concejal</strong> <span style={{ color: "var(--texto-guia)" }}>(si aplica)</span>
+              <strong>:</strong> {concejal || "______________________________"}
+            </p>
+          </div>
+
+          <div className="mt-2 flex justify-between text-[10px] px-1" style={{ color: "var(--texto-guia)" }}>
             <span>Responsable de la planilla: ______________________________</span>
             <span>Hoja ______ de ______</span>
           </div>
+
+          {/* Autorización de tratamiento de datos. La firma de cada asistente,
+              en su fila, es el acto por el que autoriza. Ley 1581 de 2012: el
+              tratamiento exige finalidad, responsable y los derechos de la
+              persona, incluso en campaña (SIC, Circular 001 de 2022). */}
+          <p
+            className="mt-2 text-justify leading-tight border rounded px-2 py-1"
+            style={{ fontSize: "8px", borderColor: "var(--borde)", color: "#333" }}
+          >
+            <strong>AUTORIZACIÓN DE TRATAMIENTO DE DATOS (Ley 1581 de 2012).</strong>{" "}
+            Con mi firma autorizo de forma libre, previa e informada a la campaña
+            responsable para recolectar, almacenar y usar mis datos personales
+            (cédula, nombre, teléfono y barrio) con la única finalidad de contacto
+            electoral y organización de la campaña. Conozco que puedo acceder,
+            conocer, actualizar, rectificar o suprimir mis datos y revocar esta
+            autorización ante el responsable de la campaña. La entrega de los datos
+            es voluntaria.
+          </p>
         </div>
       </div>
     </div>
