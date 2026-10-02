@@ -6,8 +6,9 @@ import { GrabadoraVoz } from './components/GrabadoraVoz';
 import { Logistica } from './components/Logistica';
 import { Bandeja } from './components/Bandeja';
 import { Hoy } from './components/Hoy';
+import { DashboardConsolidador } from './components/DashboardConsolidador';
 import { PERMISOS } from '@/lib/permisos';
-import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Sun, Inbox, Mic, Package, Layers } from 'lucide-react';
+import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Sun, Inbox, Mic, Package, Layers, BarChart3 } from 'lucide-react';
 
 /**
  * Cómo se ve cada estado y cómo se llama.
@@ -48,6 +49,7 @@ const ASPECTO_ESTADO: Record<string, string> = {
  * día.
  */
 const PESTANAS = [
+  { id: 'dashboard', texto: 'Dashboard', Icono: BarChart3, permiso: null },
   { id: 'hoy', texto: 'Hoy', Icono: Sun, permiso: null },
   { id: 'bandeja', texto: 'Solicitudes', Icono: Inbox, permiso: null },
   { id: 'agendar', texto: 'Agendar', Icono: Mic, permiso: null },
@@ -60,7 +62,7 @@ const PESTANAS = [
 export default function AgendaPage() {
   const [plantillas, setPlantillas] = useState<any[]>([]);
   const [agendamientos, setAgendamientos] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'hoy' | 'calendario' | 'bandeja' | 'agendar' | 'logistica' | 'plantillas' | 'config'>('hoy');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'hoy' | 'calendario' | 'bandeja' | 'agendar' | 'logistica' | 'plantillas' | 'config'>('dashboard');
 
   /**
    * Dos de las cuatro pestañas no son para cualquiera.
@@ -839,6 +841,7 @@ export default function AgendaPage() {
       </div>
 
       <div className="mt-8 transition-all duration-300">
+        {activeTab === 'dashboard' && <DashboardConsolidador />}
         {activeTab === 'hoy' && <Hoy />}
         {activeTab === 'calendario' && renderCalendario()}
         {activeTab === 'agendar' && renderAgendar()}
