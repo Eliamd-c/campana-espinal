@@ -7,6 +7,12 @@ import { Logistica } from './components/Logistica';
 import { Bandeja } from './components/Bandeja';
 import { Hoy } from './components/Hoy';
 import { DashboardConsolidador } from './components/DashboardConsolidador';
+import { CalendarioSemanal } from './components/CalendarioSemanal';
+import { HistorialReunion } from './components/HistorialReunion';
+import { ImpactoModal } from './components/ImpactoModal';
+import { VistaCandidato } from './components/VistaCandidato';
+import { VistaAsistente } from './components/VistaAsistente';
+import { VistaLogistico } from './components/VistaLogistico';
 import { PERMISOS } from '@/lib/permisos';
 import { Calendar, List, Plus, Settings, MessageSquare, Save, ChevronLeft, ChevronRight, CheckCircle2, Clock, X, Sun, Inbox, Mic, Package, Layers, BarChart3 } from 'lucide-react';
 
@@ -50,11 +56,12 @@ const ASPECTO_ESTADO: Record<string, string> = {
  */
 const PESTANAS = [
   { id: 'dashboard', texto: 'Dashboard', Icono: BarChart3, permiso: null },
+  { id: 'semana', texto: 'Semana', Icono: Calendar, permiso: null },
   { id: 'hoy', texto: 'Hoy', Icono: Sun, permiso: null },
   { id: 'bandeja', texto: 'Solicitudes', Icono: Inbox, permiso: null },
   { id: 'agendar', texto: 'Agendar', Icono: Mic, permiso: null },
   { id: 'logistica', texto: 'Logística', Icono: Package, permiso: null },
-  { id: 'calendario', texto: 'Calendario', Icono: Calendar, permiso: null },
+  { id: 'calendario', texto: 'Mes', Icono: Calendar, permiso: null },
   { id: 'plantillas', texto: 'Plantillas', Icono: Layers, permiso: PERMISOS.AGENDA_PLANTILLAS },
   { id: 'config', texto: 'Ajustes de IA', Icono: Settings, permiso: PERMISOS.CONFIGURACION_GESTIONAR },
 ] as const;
@@ -62,7 +69,7 @@ const PESTANAS = [
 export default function AgendaPage() {
   const [plantillas, setPlantillas] = useState<any[]>([]);
   const [agendamientos, setAgendamientos] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'hoy' | 'calendario' | 'bandeja' | 'agendar' | 'logistica' | 'plantillas' | 'config'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'semana' | 'hoy' | 'calendario' | 'bandeja' | 'agendar' | 'logistica' | 'plantillas' | 'config'>('dashboard');
 
   /**
    * Dos de las cuatro pestañas no son para cualquiera.
@@ -842,6 +849,7 @@ export default function AgendaPage() {
 
       <div className="mt-8 transition-all duration-300">
         {activeTab === 'dashboard' && <DashboardConsolidador />}
+        {activeTab === 'semana' && <CalendarioSemanal agendamientos={agendamientos} />}
         {activeTab === 'hoy' && <Hoy />}
         {activeTab === 'calendario' && renderCalendario()}
         {activeTab === 'agendar' && renderAgendar()}
