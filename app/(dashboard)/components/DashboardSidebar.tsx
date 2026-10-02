@@ -18,6 +18,7 @@ import {
   Sparkles,
   BookOpen,
   KeyRound,
+  Landmark,
   Circle,
   type LucideIcon,
 } from "lucide-react";
@@ -36,6 +37,7 @@ const ICONOS: Record<string, LucideIcon> = {
   personas: Users,
   calendario: Calendar,
   estrella: Star,
+  concejo: Landmark,
   mensaje: MessageSquare,
   telefono: Smartphone,
   urna: Vote,

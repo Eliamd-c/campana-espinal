@@ -225,6 +225,7 @@ export const MODULOS: {
   { nombre: "Contactos", ruta: "/contactos", icono: "personas", permiso: PERMISOS.CONTACTOS_LISTAR },
   { nombre: "Agenda", ruta: "/agenda", icono: "calendario", permiso: PERMISOS.AGENDA_VER },
   { nombre: "Líderes", ruta: "/lideres", icono: "estrella", permiso: PERMISOS.LIDERES_VER },
+  { nombre: "Concejales", ruta: "/concejales", icono: "concejo", permiso: PERMISOS.LIDERES_VER },
   { nombre: "Mensajes", ruta: "/mensajes", icono: "mensaje", permiso: PERMISOS.MENSAJES_VER },
   { nombre: "Líneas WhatsApp", ruta: "/lineas", icono: "telefono", permiso: PERMISOS.WHATSAPP_GESTIONAR },
   { nombre: "Mesas", ruta: "/mesas", icono: "urna", permiso: PERMISOS.MESAS_VER },
