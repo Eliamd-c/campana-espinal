@@ -64,6 +64,25 @@ export const LiderSchema = z.object({
   barrio: z.string().max(80).optional(),
 });
 
+/**
+ * Alta/edición de un candidato al concejo (el vértice de la pirámide).
+ * Solo el nombre es obligatorio: el partido y el número de tarjetón se pueden
+ * completar después.
+ */
+export const ConcejalSchema = z.object({
+  nombre: z.string().min(2, "El nombre es obligatorio").max(120),
+  partido: z.preprocess(vacioEsIndefinido, z.string().max(80).optional()),
+  numero_tarjeton: z.preprocess(vacioEsIndefinido, z.string().max(20).optional()),
+});
+
+/**
+ * Colgar (o descolgar) un líder de un concejal. `null` = el líder pasa a ser
+ * del alcalde directamente.
+ */
+export const AsignarConcejalSchema = z.object({
+  concejal_id: z.number().int().positive().nullable(),
+});
+
 /** Tipos de evento admitidos, según el comentario del modelo Evento. */
 export const TIPOS_EVENTO = [
   "mitin", "casa_a_casa", "foro", "recorrido",

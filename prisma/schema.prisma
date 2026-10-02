@@ -101,7 +101,13 @@ model Contacto {
   intencion_voto         String?   @default("desconocido") @db.VarChar(20) // positivo, negativo, indeciso, desconocido
   ultima_encuesta        DateTime?
 
+  // La planilla (reunión) de la que salió esta persona. De aquí cuelga la
+  // atribución: contacto → reunión → concejal, sin pasar por el líder, para que
+  // si el líder cambia de concejal no se reescriba a quién se le acreditó.
+  reunion_id             Int?
+
   lider       Lider?        @relation(fields: [lider_id], references: [id])
+  reunion     Reunion?      @relation(fields: [reunion_id], references: [id])
   asistencias AsistenteEvento[]
   mensajes    Mensaje[]
   clics_enlace ClicRastreo[]
@@ -109,6 +115,7 @@ model Contacto {
   @@index([barrio])
   @@index([intencion_voto])
   @@index([lider_id])
+  @@index([reunion_id])
   @@index([fecha_registro])
   @@index([puesto_votacion])
 
@@ -120,15 +127,25 @@ model Reunion {
   titulo            String?   @db.VarChar(120)
   fecha             DateTime?
   lugar             String?   @db.VarChar(120)
+  barrio            String?   @db.VarChar(80)
   lider_id          Int?
+  // Concejal al que se le acredita esta reunión. Se COPIA del líder al
+  // digitalizar la planilla, no se deduce en vivo: así queda congelado y, si el
+  // líder se cambia de concejal más adelante, la historia de esta reunión no se
+  // altera. Vacío = reunión del alcalde directamente.
+  concejal_id       Int?
   total_asistentes  Int?      @default(0)
   nuevos_unicos     Int?      @default(0)
   repetidos         Int?      @default(0)
   foto_planilla_url String?   @db.VarChar(255)
   alerta_trasteo    Boolean?  @default(false)
 
-  lider Lider? @relation(fields: [lider_id], references: [id])
+  lider     Lider?     @relation(fields: [lider_id], references: [id])
+  concejal  Concejal?  @relation(fields: [concejal_id], references: [id])
+  contactos Contacto[]
 
+  @@index([concejal_id])
+  @@index([lider_id])
   @@map("reuniones")
 }
 
@@ -137,6 +154,11 @@ model Lider {
   nombre             String?   @db.VarChar(120)
   telefono           String?   @db.VarChar(15)
   barrio             String?   @db.VarChar(80)
+  // A qué candidato al concejo pertenece este líder. Para la corporación
+  // «concejo» un líder le trabaja a UN solo concejal (pirámide estricta).
+  // Vacío = líder del alcalde directamente. Es el valor por defecto que hereda
+  // la reunión al digitalizar, pero la reunión guarda su propia copia.
+  concejal_id        Int?
   personas_nuevas    Int?      @default(0)
   personas_repetidas Int?      @default(0)
   tasa_trasteo       Decimal?  @default(0.0) @db.Decimal(5, 2)
@@ -144,15 +166,35 @@ model Lider {
   estado             String?   @default("activo") @db.VarChar(10)
   fecha_registro     DateTime? @default(now())
 
+  concejal  Concejal?  @relation(fields: [concejal_id], references: [id])
   contactos Contacto[]
   reuniones Reunion[]
   eventos   Evento[]
 
   @@index([barrio])
   @@index([estado])
+  @@index([concejal_id])
   @@index([fecha_registro])
 
   @@map("lideres")
+}
+
+/// Candidato al concejo de la coalición (el vértice de la pirámide bajo el
+/// alcalde). No es un usuario del sistema: es un dato que se elige al
+/// digitalizar la planilla. Cada líder y cada reunión pueden colgar de uno.
+model Concejal {
+  id              Int       @id @default(autoincrement())
+  nombre          String?   @db.VarChar(120)
+  partido         String?   @db.VarChar(80)  // ej. Cambio Radical
+  numero_tarjeton String?   @db.VarChar(20)  // ej. CR6
+  estado          String?   @default("activo") @db.VarChar(10)
+  fecha_registro  DateTime? @default(now())
+
+  lideres   Lider[]
+  reuniones Reunion[]
+
+  @@index([estado])
+  @@map("concejales")
 }
 
 model Mensaje {
