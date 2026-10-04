@@ -2,30 +2,107 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * Sistema de diseño — Campaña El Espinal
+ *
+ * Un único lugar para el color, la superficie y el texto. Antes cada pantalla
+ * repetía `emerald-700` y `gray-100` a mano; ahora todo sale de estos tokens,
+ * así que subir el nivel visual se hace una vez y vale para todas.
+ *
+ * Los temas oscuro y "sol" (alto contraste para leer la pantalla al sol en la
+ * calle) ya están definidos y se activan con `data-theme` en <html>. No se
+ * activan solos todavía: el panel sigue en claro hasta migrar el resto de
+ * pantallas, para no dejar a medias las que aún usan colores fijos.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* marca: verde institucional profundo + ámbar "pólvora" (El Espinal) */
+  --brand: #0d5c47;
+  --brand-700: #0a4a39;
+  --brand-50: #e7f1ed;
+  --spark: #e8870c;
+  --spark-ink: #7a4203;
+
+  /* superficies — neutros con un leve sesgo cálido, no gris puro */
+  --bg: #f5f3ec;
+  --surface: #ffffff;
+  --surface-2: #efece3;
+  --line: #e3ded2;
+
+  /* texto */
+  --fg: #182420;
+  --muted: #596661;
+  --faint: #8b938c;
+
+  /* estado / intención de voto (siempre acompañados de etiqueta) */
+  --pos: #2b8f68;
+  --ind: #b97d10;
+  --neg: #cf3146;
+  --unk: #7c8894;
+
+  --radius: 16px;
+  --shadow: 0 1px 2px rgba(24, 36, 32, .04), 0 8px 24px -14px rgba(24, 36, 32, .22);
+  --shadow-lg: 0 24px 60px -28px rgba(24, 36, 32, .42);
+
+  /* alias de compatibilidad con utilidades previas (bg-background, etc.) */
+  --background: var(--bg);
+  --foreground: var(--fg);
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root[data-theme="dark"] {
+  --brand: #2ea383;
+  --brand-700: #43b596;
+  --brand-50: #15241f;
+  --spark: #f4a033;
+  --spark-ink: #1c140a;
+  --bg: #0e1512;
+  --surface: #151e1a;
+  --surface-2: #1b2621;
+  --line: #273530;
+  --fg: #e8efe9;
+  --muted: #9fb0a7;
+  --faint: #6f7f77;
+  --pos: #3fb27f;
+  --ind: #e0a022;
+  --neg: #ef5e72;
+  --unk: #9aa6b4;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -16px rgba(0, 0, 0, .7);
+  --shadow-lg: 0 30px 70px -30px rgba(0, 0, 0, .8);
+  --background: var(--bg);
+  --foreground: var(--fg);
+  color-scheme: dark;
+}
+
+/* "modo sol": luz directa, máximo contraste para la calle */
+:root[data-theme="sol"] {
+  --brand: #063f2f;
+  --brand-700: #042a1f;
+  --brand-50: #dfeee7;
+  --spark: #b85c00;
+  --spark-ink: #ffffff;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f1efe8;
+  --line: #101613;
+  --fg: #000000;
+  --muted: #1c2a24;
+  --faint: #3a463f;
+  --pos: #0a6b45;
+  --ind: #8a5a00;
+  --neg: #a6081f;
+  --unk: #3a463f;
+  --shadow: 0 0 0 1.5px #101613;
+  --shadow-lg: 0 0 0 2px #101613;
+  --background: #ffffff;
+  --foreground: #000000;
+  color-scheme: light;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-}
-
 
 /**
  * Quien pide menos movimiento, menos movimiento.

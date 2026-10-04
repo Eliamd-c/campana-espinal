@@ -31,7 +31,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-bg flex flex-col md:flex-row">
       {/* Sidebar Component (Handles both Desktop & Mobile Views) */}
       <DashboardSidebar session={session} permisos={permisos} />
 
